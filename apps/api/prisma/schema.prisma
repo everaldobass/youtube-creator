@@ -1,0 +1,149 @@
+// SQLite no MVP. Para migrar ao Supabase (Postgres):
+//   1) provider = "postgresql"  2) DATABASE_URL = URL do Supabase  3) rodar as migrations de novo.
+// Regras de compatibilidade: ids em texto (cuid), sem enums nativos, sem recursos exclusivos do SQLite.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  nome      String    @default("")
+  createdAt DateTime  @default(now())
+  projects  Project[]
+}
+
+model Project {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  ideia           String      @default("")
+  tema            String      @default("")
+  publico         String      @default("")
+  formato         String      @default("longo") // longo | shorts
+  duracaoMinutos  Int         @default(5)
+  idioma          String      @default("pt-BR") // pt-BR | en
+  tituloEscolhido String      @default("")
+  vozNome         String      @default("voz-masculina-1")
+  vozInstrucaoTom String      @default("suave, claro, bem explicado")
+  narracaoNatural Boolean     @default(true) // pausas e respiros naturais na narração (Fish Audio)
+  estiloVisual    String      @default("3D estilizado, cores quentes, iluminação suave, sem texto na imagem")
+  descricao       String      @default("")
+  efeitoCamera    String      @default("alternado") // nenhum | zoom-in | ... | alternado
+  musicaPath      String?
+  musicaNome      String      @default("")
+  musicaArtista   String      @default("")
+  musicaOrigem    String      @default("")
+  musicaCredito   String      @default("")
+  musicaVolume    Int         @default(20) // 0 a 100 (% do volume da narração)
+  musicaDucking   Boolean     @default(true) // abaixa a música enquanto há narração
+  legendasAtivas  Boolean     @default(true) // queima as legendas sincronizadas no MP4
+  legendaTamanho  Int         @default(100) // tamanho da fonte em % (60 a 160)
+  etapaAtual      String      @default("definicoes")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  titles          Title[]
+  scenes          Scene[]
+  tags            Tag[]
+  thumbnails      Thumbnail[]
+  chapters        Chapter[]
+  jobs            Job[]
+  exports         Export[]
+
+  @@index([userId, updatedAt])
+}
+
+model Title {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  texto     String
+  estilo    String  @default("")
+  nota      Float   @default(0)
+  escolhido Boolean @default(false)
+
+  @@index([projectId])
+}
+
+model Scene {
+  id              String  @id @default(cuid())
+  projectId       String
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  numero          Int
+  textoNarrado    String  @default("")
+  duracaoSegundos Int     @default(0)
+  descricaoVisual String  @default("")
+  promptImagem    String  @default("")
+  imagemPath      String?
+  audioPath       String?
+  audioDuracaoMs  Int? // duração real do áudio gerado (define quanto tempo a imagem fica na tela)
+  versaoMidia     Int     @default(0) // sobe a cada áudio/imagem novo; evita cache no navegador
+  statusNarracao  String  @default("pendente") // pendente | gerado | aprovado | desatualizado
+  statusImagem    String  @default("pendente")
+
+  @@unique([projectId, numero])
+}
+
+model Tag {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  texto     String
+  ordem     Int
+
+  @@index([projectId])
+}
+
+model Thumbnail {
+  id            String  @id @default(cuid())
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variacao      Int
+  textoNaImagem String  @default("")
+  imagemPath    String?
+  escolhida     Boolean @default(false)
+
+  @@index([projectId])
+}
+
+model Chapter {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tempo     String
+  titulo    String
+
+  @@index([projectId])
+}
+
+model Job {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tipo       String // titulos | roteiro | narracao | imagem | tags | thumbnail | descricao | render
+  alvoId     String?
+  status     String   @default("fila") // fila | executando | concluido | erro
+  tentativas Int      @default(0)
+  erro       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId, status])
+}
+
+model Export {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tipo      String // zip | mp4
+  path      String?
+  status    String   @default("fila")
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+}

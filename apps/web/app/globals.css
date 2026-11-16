@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Tema escuro é o padrão (classe "dark" no <html>). */
+  :root {
+    --background: 220 35% 7%;        /* #0B0F17 */
+    --panel: 221 39% 11%;            /* #111827 */
+    --card: 217 33% 17%;             /* #1E293B */
+    --card-foreground: 210 20% 98%;  /* #F9FAFB */
+    --border: 215 19% 27%;           /* #374151 */
+    --foreground: 210 20% 98%;       /* #F9FAFB */
+    --muted-foreground: 218 11% 65%; /* #9CA3AF */
+    --primary: 0 84% 60%;            /* #EF4444 */
+    --primary-hover: 0 72% 51%;      /* #DC2626 */
+    --primary-foreground: 0 0% 100%;
+    --ai: 258 90% 66%;               /* #8B5CF6 */
+    --ai-hover: 262 83% 58%;         /* #7C3AED */
+    --success: 142 71% 45%;          /* #22C55E */
+    --warning: 38 92% 50%;           /* #F59E0B */
+    --ring: 0 84% 60%;
+    --radius: 0.5rem;                /* 8px: botões, campos, badges */
+  }
+
+  /* Tema claro opcional (ajustar quando houver telas claras no Stitch). */
+  :root:not(.dark) {
+    --background: 210 40% 98%;
+    --panel: 0 0% 100%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --border: 214 32% 91%;
+    --foreground: 222 47% 11%;
+    --muted-foreground: 215 16% 47%;
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
+  :focus-visible { @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background; }
+}
+
+/* ---------------------------------------------------------------------------
+   Prévia do movimento de câmera (Ken Burns). A montagem final usa FFmpeg.
+   A duração é definida inline, igual à duração do áudio de cada cena.
+--------------------------------------------------------------------------- */
+@keyframes kb-zoom-in {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.16); }
+}
+@keyframes kb-zoom-out {
+  from { transform: scale(1.16); }
+  to { transform: scale(1.02); }
+}
+@keyframes kb-pan-esquerda {
+  from { transform: scale(1.2) translateX(6%); }
+  to { transform: scale(1.2) translateX(-6%); }
+}
+@keyframes kb-pan-direita {
+  from { transform: scale(1.2) translateX(-6%); }
+  to { transform: scale(1.2) translateX(6%); }
+}
+@keyframes kb-pan-cima {
+  from { transform: scale(1.2) translateY(6%); }
+  to { transform: scale(1.2) translateY(-6%); }
+}
+@keyframes kb-pan-baixo {
+  from { transform: scale(1.2) translateY(-6%); }
+  to { transform: scale(1.2) translateY(6%); }
+}
+@keyframes kb-rotacao {
+  from { transform: scale(1.22) rotate(-1.4deg); }
+  to { transform: scale(1.22) rotate(1.4deg); }
+}
+@keyframes kb-tridimensional {
+  from { transform: scale(1.06) translate3d(3%, 2%, 0) rotate(-0.5deg); }
+  to { transform: scale(1.2) translate3d(-3%, -2%, 0) rotate(0.5deg); }
+}
+
+.kb-zoom-in, .kb-zoom-out, .kb-pan-esquerda, .kb-pan-direita,
+.kb-pan-cima, .kb-pan-baixo, .kb-rotacao, .kb-tridimensional {
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  will-change: transform;
+}
+.kb-zoom-in { animation-name: kb-zoom-in; }
+.kb-zoom-out { animation-name: kb-zoom-out; }
+.kb-pan-esquerda { animation-name: kb-pan-esquerda; }
+.kb-pan-direita { animation-name: kb-pan-direita; }
+.kb-pan-cima { animation-name: kb-pan-cima; }
+.kb-pan-baixo { animation-name: kb-pan-baixo; }
+.kb-rotacao { animation-name: kb-rotacao; }
+.kb-tridimensional { animation-name: kb-tridimensional; }
+
+/* Demonstração em loop no seletor de efeito. */
+.kb-preview {
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  animation-duration: 5s;
+  animation-timing-function: ease-in-out;
+}
+
+/* ---------------------------------------------------------------------------
+   Prévia das legendas queimadas: caixa escura atrás do texto em negrito.
+   No MP4 final a caixa e o karaokê são desenhados pelo FFmpeg/libass.
+--------------------------------------------------------------------------- */
+.legenda-caixa {
+  display: inline-block;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.66);
+  padding: 0.18em 0.6em;
+}
+
+.legenda-previa {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
