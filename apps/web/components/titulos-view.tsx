@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Pencil, Sparkles } from 'lucide-react';
 import { MAX_TITULO, type TitleDto } from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
+import { StepHeader } from '@/components/step-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,10 +24,12 @@ export function TitulosView({
   projectId,
   initialTitles,
   temEntrada,
+  autoGerar = false,
 }: {
   projectId: string;
   initialTitles: TitleDto[];
   temEntrada: boolean;
+  autoGerar?: boolean;
 }) {
   const router = useRouter();
   const [titles, setTitles] = useState(initialTitles);
@@ -35,6 +38,7 @@ export function TitulosView({
   const [erro, setErro] = useState<string | null>(null);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [rascunho, setRascunho] = useState('');
+  const autoDisparado = useRef(false);
 
   const escolhido = titles.find((t) => t.escolhido);
 
@@ -51,6 +55,26 @@ export function TitulosView({
       setGerando(false);
     }
   }
+
+  // O botão "Salvar e gerar títulos" da etapa 1 abre esta tela com ?gerar=1.
+  useEffect(() => {
+    if (!autoGerar || autoDisparado.current || !temEntrada) return;
+    autoDisparado.current = true;
+    // Tira o parâmetro da URL para um recarregamento não gerar de novo sem querer.
+    window.history.replaceState(null, '', window.location.pathname);
+    void (async () => {
+      setGerando(true);
+      setErro(null);
+      try {
+        setTitles(await post<TitleDto[]>(`/projects/${projectId}/titles/generate`));
+        router.refresh();
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : 'Erro ao gerar títulos');
+      } finally {
+        setGerando(false);
+      }
+    })();
+  }, [autoGerar, temEntrada, projectId, router]);
 
   async function escolher(id: string) {
     setErro(null);
@@ -86,19 +110,18 @@ export function TitulosView({
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <p className="text-sm text-muted-foreground">Etapa 2 de 9</p>
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">10 alternativas de título</h1>
-        <Button variant="ai" onClick={gerar} disabled={gerando || !temEntrada}>
-          <Sparkles className="size-4" />
-          {gerando ? 'Gerando...' : titles.length ? 'Gerar novas alternativas' : 'Gerar títulos'}
-        </Button>
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Cada título recebe uma nota de 0 a 10 por clareza e curiosidade. Escolha um ou edite antes de
-        continuar.
-      </p>
+    <div className="mx-auto max-w-[1022px]">
+      <StepHeader
+        etapa="Etapa 2 de 9"
+        title="10 alternativas de título"
+        description="Cada título recebe uma nota de 0 a 10 por clareza e curiosidade. Escolha um ou edite antes de continuar."
+        actions={
+          <Button onClick={gerar} disabled={gerando || !temEntrada}>
+            <Sparkles className="size-4" />
+            {gerando ? 'Gerando...' : titles.length ? 'Gerar novas alternativas' : 'Gerar títulos'}
+          </Button>
+        }
+      />
 
       {!temEntrada && (
         <div className="mt-6">
@@ -125,7 +148,9 @@ export function TitulosView({
             const editando = editandoId === t.id;
             return (
               <li key={t.id}>
-                <Card className={cn('flex items-center gap-4 p-4', t.escolhido && 'border-primary')}>
+                <Card
+                  className={cn('flex items-center gap-4 p-4', t.escolhido && 'border-primary')}
+                >
                   <div
                     className={cn(
                       'flex size-12 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold',
@@ -161,7 +186,9 @@ export function TitulosView({
                         <p className="font-medium leading-snug">{t.texto}</p>
                         <div className="mt-1.5 flex items-center gap-2">
                           {t.estilo && <Badge>{t.estilo}</Badge>}
-                          <span className="text-xs text-muted-foreground">{t.texto.length} caracteres</span>
+                          <span className="text-xs text-muted-foreground">
+                            {t.texto.length} caracteres
+                          </span>
                         </div>
                       </>
                     )}
@@ -170,7 +197,11 @@ export function TitulosView({
                   <div className="flex shrink-0 gap-2">
                     {editando ? (
                       <>
-                        <Button size="sm" onClick={() => salvarEdicao(t.id)} disabled={!rascunho.trim()}>
+                        <Button
+                          size="sm"
+                          onClick={() => salvarEdicao(t.id)}
+                          disabled={!rascunho.trim()}
+                        >
                           Salvar
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setEditandoId(null)}>

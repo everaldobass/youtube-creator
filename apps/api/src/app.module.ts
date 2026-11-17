@@ -16,6 +16,9 @@ import { ThumbnailsModule } from './thumbnails/thumbnails.module';
 import { DescriptionModule } from './description/description.module';
 import { ExportModule } from './export/export.module';
 import { MusicModule } from './music/music.module';
+import { EditorialModule } from './editorial/editorial.module';
+import { VisualAssetsModule } from './visual/visual-assets.module';
+import { QualityModule } from './quality/quality.module';
 
 @Module({
   imports: [
@@ -35,6 +38,9 @@ import { MusicModule } from './music/music.module';
     DescriptionModule,
     ExportModule,
     MusicModule,
+    EditorialModule,
+    VisualAssetsModule,
+    QualityModule,
   ],
   controllers: [HealthController],
 })

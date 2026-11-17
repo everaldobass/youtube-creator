@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   AddSceneInput,
@@ -24,6 +24,17 @@ export class ScenesController {
   @Post('projects/:id/script/generate')
   generate(@Param('id') id: string) {
     return this.scenes.generate(id);
+  }
+
+  /** Baixa o roteiro em Markdown (texto, direção visual e referências). */
+  @Get('projects/:id/script.md')
+  async scriptMarkdown(@Param('id') id: string) {
+    const { nome, markdown } = await this.scenes.roteiroMarkdown(id);
+    return new StreamableFile(Buffer.from(markdown, 'utf8'), {
+      type: 'text/markdown; charset=utf-8',
+      disposition: `attachment; filename="${nome}"`,
+      length: Buffer.byteLength(markdown, 'utf8'),
+    });
   }
 
   @Post('projects/:id/scenes')

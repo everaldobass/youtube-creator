@@ -7,6 +7,7 @@ import {
   EfeitoCamera,
   ExportResponse,
   JobStatus,
+  LegendaEstilo,
   efeitoDaCena,
   formatarTempo,
   resolucaoDoFormato,
@@ -143,9 +144,27 @@ export class ExportService implements OnModuleInit {
       }
       const { largura, altura } = resolucaoDoFormato(project.formato);
       const efeito = (row?.efeitoCamera as EfeitoCamera) ?? 'alternado';
+      const usarSugerida = row?.usarCameraSugerida ?? false;
       const legendasAtivas = row?.legendasAtivas ?? true;
-      const opcoesLegenda = opcoesDeLegenda(largura, altura, row?.legendaTamanho ?? 100);
+      const opcoesLegenda = opcoesDeLegenda(
+        largura,
+        altura,
+        row?.legendaTamanho ?? 100,
+        (row?.legendaPosicao as 'baixo' | 'meio' | 'topo') ?? 'baixo',
+        row?.legendaFonte ?? 'Noto Sans',
+        row?.legendaCor ?? '#C4B5FD',
+        (row?.legendaEstilo as LegendaEstilo | undefined) ?? 'negrito',
+      );
       const silenciosPorCena = new Map<number, Silencio[]>();
+      const visuais = new Map(
+        (
+          await this.prisma.visualAsset.findMany({
+            where: { projectId: exp.projectId, sceneNumero: { not: null }, imagemPath: { not: null } },
+          })
+        )
+          .filter((v) => v.sceneNumero !== null && v.imagemPath)
+          .map((v) => [v.sceneNumero as number, v.imagemPath as string]),
+      );
       const filtroParado =
         `scale=${largura}:${altura}:force_original_aspect_ratio=decrease,` +
         `pad=${largura}:${altura}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
@@ -153,10 +172,16 @@ export class ExportService implements OnModuleInit {
       const mp4 = await this.ffmpeg.comPastaTemporaria(async (dir) => {
         const lista: string[] = [];
         for (const c of cenas) {
-          const img = join(dir, `img-${pad(c.numero)}.${extDaChave(c.imagemPath!)}`);
+          let img = join(dir, `img-${pad(c.numero)}.${extDaChave(c.imagemPath!)}`);
           const aud = join(dir, `aud-${pad(c.numero)}.wav`);
           const seg = join(dir, `seg-${pad(c.numero)}.mp4`);
           await fs.writeFile(img, await this.storage.get(c.imagemPath!));
+          const visual = visuais.get(c.numero);
+          if (visual) {
+            const asset = join(dir, `visual-${pad(c.numero)}.${extDaChave(visual)}`);
+            await fs.writeFile(asset, await this.storage.get(visual));
+            img = await this.comporComVisual(img, asset, largura, altura, dir, c.numero);
+          }
           await fs.writeFile(aud, await this.storage.get(c.audioPath!));
           const segundos = (c.audioDuracaoMs ?? c.duracaoSegundos * 1000) / 1000;
           const dur = segundos.toFixed(3);
@@ -167,8 +192,12 @@ export class ExportService implements OnModuleInit {
             ]);
             silenciosPorCena.set(c.numero, parsearSilencios(saida, segundos * 1000));
           }
-          // Movimento de câmera (Ken Burns); "nenhum" mantém o filtro simples de antes.
-          const movimento = filtroCamera(efeitoDaCena(efeito, c.numero), largura, altura, segundos);
+          // Movimento de câmera (Ken Burns); a sugestão da IA pode substituir o modo global.
+          const escolhido =
+            usarSugerida && c.sugestaoCamera
+              ? (c.sugestaoCamera as EfeitoCamera)
+              : efeitoDaCena(efeito, c.numero);
+          const movimento = filtroCamera(escolhido, largura, altura, segundos);
           await this.ffmpeg.run([
             '-y', '-loop', '1', '-framerate', String(FPS_VIDEO), '-i', img, '-i', aud,
             '-vf', movimento ? `${movimento},format=yuv420p` : filtroParado, '-t', dur,
@@ -208,7 +237,7 @@ export class ExportService implements OnModuleInit {
 
         if (!legendasAtivas) return fs.readFile(base);
 
-        // Legenda queimada: caixa escura atrás do texto, negrito e destaque por palavra.
+        // Legenda queimada: caixa escura atrás do texto, no traço do projeto e com destaque por palavra.
         const blocos = this.blocosDoProjeto(linhaDoTempo(cenas), silenciosPorCena, opcoesLegenda);
         // Mede o texto real para desenhar UMA caixa arredondada por legenda.
         const medidas = await this.medirLegendas(blocos, opcoesLegenda, dir);
@@ -233,8 +262,34 @@ export class ExportService implements OnModuleInit {
     }
   }
 
-  /** Envelope do FFmpeg para misturar a música de fundo com a narração já montada. */
-  private argumentosDeMusica(
+  /**
+   * Sobrepõe o elemento visual (mapa/linha do tempo) no canto inferior direito
+   * da imagem da cena, com margem. A composição vira a imagem-base da cena.
+   */
+  private async comporComVisual(
+    imagem: string,
+    visual: string,
+    largura: number,
+    altura: number,
+    dir: string,
+    numero: number,
+  ): Promise<string> {
+    const saida = join(dir, `comp-${pad(numero)}.png`);
+    const escala = Math.max(2, Math.round((largura * 0.62) / 2) * 2);
+    const margem = Math.round(largura * 0.02);
+    await this.ffmpeg.run([
+      '-y', '-i', imagem, '-i', visual,
+      '-filter_complex',
+      `[0:v]scale=${largura}:${altura}:force_original_aspect_ratio=increase,` +
+        `crop=${largura}:${altura}[bg];` +
+        `[1:v]scale=${escala}:-2[ov];` +
+        `[bg][ov]overlay=W-w-${margem}:H-h-${margem}:format=auto`,
+      '-frames:v', '1', saida,
+    ]);
+    return saida;
+  }
+
+  /** Envelope do FFmpeg para misturar a música de fundo com a narração já montada. */  private argumentosDeMusica(
     video: string,
     musica: string,
     saida: string,
@@ -355,8 +410,17 @@ export class ExportService implements OnModuleInit {
     if (cenas.length === 0) throw new BadRequestException('Não há cenas para exportar.');
     const linha = linhaDoTempo(cenas);
     const efeito = (row?.efeitoCamera as EfeitoCamera) ?? 'alternado';
+    const usarSugerida = row?.usarCameraSugerida ?? false;
     const { largura, altura } = resolucaoDoFormato(project.formato);
-    const opcoesLegenda = opcoesDeLegenda(largura, altura, row?.legendaTamanho ?? 100);
+    const opcoesLegenda = opcoesDeLegenda(
+      largura,
+      altura,
+      row?.legendaTamanho ?? 100,
+      (row?.legendaPosicao as 'baixo' | 'meio' | 'topo') ?? 'baixo',
+      row?.legendaFonte ?? 'Noto Sans',
+      row?.legendaCor ?? '#C4B5FD',
+      (row?.legendaEstilo as LegendaEstilo | undefined) ?? 'negrito',
+    );
     const zip = archiver('zip', { zlib: { level: 6 } });
 
     const tempos = [];
@@ -374,8 +438,27 @@ export class ExportService implements OnModuleInit {
         imagem,
         audio,
         textoNarrado: c.textoNarrado,
-        efeitoCamera: efeitoDaCena(efeito, c.numero),
+        efeitoCamera:
+          usarSugerida && c.sugestaoCamera
+            ? (c.sugestaoCamera as EfeitoCamera)
+            : efeitoDaCena(efeito, c.numero),
       });
+    }
+    // Elementos visuais explicativos, na ordem de criação, com o vínculo à cena.
+    const visuais = await this.prisma.visualAsset.findMany({
+      where: { projectId, imagemPath: { not: null } },
+      orderBy: { criadoEm: 'asc' },
+    });
+    for (const [i, v] of visuais.entries()) {
+      const nome = `elementos-visuais/${v.tipo}-${i + 1}.${extDaChave(v.imagemPath!)}`;
+      zip.append(await this.storage.get(v.imagemPath!), { name: nome });
+      tempos.push({
+        cena: v.sceneNumero,
+        tipo: v.tipo,
+        titulo: v.titulo,
+        periodo: v.periodo,
+        arquivo: nome,
+      } as never);
     }
     zip.append(srtDeLegendas(this.blocosDoProjeto(linha, await this.silenciosDoProjeto(cenas), opcoesLegenda)), {
       name: 'legendas.srt',

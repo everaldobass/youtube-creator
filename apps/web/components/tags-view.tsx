@@ -6,6 +6,7 @@ import { Copy, Sparkles, X } from 'lucide-react';
 import { MAX_CARACTERES_TAGS, totalCaracteresTags, type TagsResponse } from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
+import { StepHeader } from '@/components/step-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -93,18 +94,18 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <p className="text-sm text-muted-foreground">Etapa 6 de 9</p>
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Tags e otimização de SEO</h1>
-        <Button variant="ai" onClick={gerar} disabled={gerando}>
-          <Sparkles className="size-4" />
-          {gerando ? 'Gerando...' : tags.length ? 'Gerar de novo' : 'Gerar tags'}
-        </Button>
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        De 15 a 25 tags, da mais ampla à mais específica, dentro do limite de {MAX_CARACTERES_TAGS} caracteres do YouTube Studio.
-      </p>
+    <div className="mx-auto max-w-[1022px]">
+      <StepHeader
+        etapa="Etapa 6 de 9"
+        title="Tags e otimização de SEO"
+        description={`De 15 a 25 tags, da mais ampla à mais específica, dentro do limite de ${MAX_CARACTERES_TAGS} caracteres do YouTube Studio.`}
+        actions={
+          <Button variant="ai" onClick={gerar} disabled={gerando}>
+            <Sparkles className="size-4" />
+            {gerando ? 'Gerando...' : tags.length ? 'Gerar de novo' : 'Gerar tags'}
+          </Button>
+        }
+      />
 
       {erro && (
         <div className="mt-6">
@@ -114,7 +115,12 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
 
       <Card className={cn('mt-6 p-4', gerando && 'animate-pulse')}>
         <div className="flex items-center justify-between gap-4">
-          <p className={cn('text-sm font-medium', total > MAX_CARACTERES_TAGS ? 'text-primary' : perto ? 'text-warning' : '')}>
+          <p
+            className={cn(
+              'text-sm font-medium',
+              total > MAX_CARACTERES_TAGS ? 'text-primary' : perto ? 'text-warning' : '',
+            )}
+          >
             {total} de {MAX_CARACTERES_TAGS} caracteres · {tags.length} tags
           </p>
           <Button size="sm" variant="outline" onClick={copiar} disabled={tags.length === 0}>
@@ -122,7 +128,13 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
           </Button>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel">
-          <div className={cn('h-full rounded-full transition-all', perto ? 'bg-warning' : 'bg-success')} style={{ width: `${percentual}%` }} />
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              perto ? 'bg-warning' : 'bg-success',
+            )}
+            style={{ width: `${percentual}%` }}
+          />
         </div>
         {tags.length !== 0 && (tags.length < 15 || tags.length > 25) && (
           <p className="mt-2 text-xs text-warning">O recomendado é de 15 a 25 tags.</p>
@@ -134,7 +146,12 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
               <li key={t}>
                 <Badge className="gap-1.5 py-1 text-sm">
                   {t}
-                  <button type="button" aria-label={`Remover a tag ${t}`} onClick={() => salvar(tags.filter((x) => x !== t))} className="rounded hover:text-primary">
+                  <button
+                    type="button"
+                    aria-label={`Remover a tag ${t}`}
+                    onClick={() => salvar(tags.filter((x) => x !== t))}
+                    className="rounded hover:text-primary"
+                  >
                     <X className="size-3.5" />
                   </button>
                 </Badge>
@@ -142,7 +159,9 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
             ))}
           </ul>
         ) : (
-          <p className="mt-4 text-sm text-muted-foreground">Nenhuma tag ainda. Gere ou adicione manualmente.</p>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Nenhuma tag ainda. Gere ou adicione manualmente.
+          </p>
         )}
 
         <div className="mt-4">
@@ -155,7 +174,9 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), adicionar())}
               placeholder="Digite e pressione Enter"
             />
-            <Button variant="outline" onClick={adicionar} disabled={!nova.trim()}>Adicionar</Button>
+            <Button variant="outline" onClick={adicionar} disabled={!nova.trim()}>
+              Adicionar
+            </Button>
           </div>
         </div>
       </Card>

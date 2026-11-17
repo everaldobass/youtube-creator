@@ -25,11 +25,21 @@ function toDto(p: Project): ProjectDto {
     vozNome: p.vozNome,
     vozInstrucaoTom: p.vozInstrucaoTom,
     narracaoNatural: p.narracaoNatural,
+    narracaoVelocidade: p.narracaoVelocidade,
+    pronuncia: p.pronuncia,
     estiloVisual: p.estiloVisual,
     descricao: p.descricao,
     efeitoCamera: p.efeitoCamera as ProjectDto['efeitoCamera'],
+    usarCameraSugerida: p.usarCameraSugerida,
     legendasAtivas: p.legendasAtivas,
     legendaTamanho: p.legendaTamanho,
+    legendaPosicao: p.legendaPosicao as ProjectDto['legendaPosicao'],
+    legendaEstilo: p.legendaEstilo as ProjectDto['legendaEstilo'],
+    legendaFonte: p.legendaFonte,
+    legendaCor: p.legendaCor,
+    editorialStatus: p.editorialStatus as ProjectDto['editorialStatus'],
+    fontesRoteiro: p.fontesRoteiro,
+    revisaoFinalEm: p.revisaoFinalEm?.toISOString() ?? null,
     etapaAtual: p.etapaAtual as StepSlug,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -103,7 +113,14 @@ export class ProjectsService {
   async duplicate(id: string): Promise<ProjectDto> {
     const original = await this.get(id);
     const userId = await this.prisma.localUserId();
-    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = original;
+    const {
+      id: _id,
+      createdAt: _c,
+      updatedAt: _u,
+      revisaoFinalEm: _r,
+      editorialStatus: _e,
+      ...rest
+    } = original;
 
     const [titles, scenes, tags, chapters] = await Promise.all([
       this.prisma.title.findMany({ where: { projectId: id }, orderBy: { nota: 'desc' } }),
@@ -122,6 +139,7 @@ export class ProjectsService {
           ...rest,
           userId,
           etapaAtual,
+          editorialStatus: 'nao_revisado',
           ideia: rest.ideia ? `${rest.ideia} (cópia)` : '',
         },
       });

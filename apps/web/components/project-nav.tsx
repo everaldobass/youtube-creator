@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Check, Lock } from 'lucide-react';
+import { ArrowLeft, Check, Lock } from 'lucide-react';
 import { STEPS } from '@yt/shared';
 import { cn } from '@/lib/utils';
 
@@ -14,8 +14,12 @@ export function ProjectNav({ projectId, etapaAtual }: { projectId: string; etapa
 
   return (
     <>
-      <aside className="hidden w-72 shrink-0 border-r bg-panel p-4 md:block">
-        <Link href="/" className="mb-6 block px-2 text-sm text-muted-foreground hover:text-foreground">
+      <aside className="hidden w-72 shrink-0 border-r bg-panel p-4 md:sticky md:top-16 md:block md:h-[calc(100vh-4rem)] md:self-start md:overflow-y-auto">
+        <Link
+          href="/"
+          className="mb-6 -mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4 shrink-0" />
           Voltar para seus vídeos
         </Link>
         <nav aria-label="Etapas do vídeo">
@@ -47,9 +51,13 @@ export function ProjectNav({ projectId, etapaAtual }: { projectId: string; etapa
               return (
                 <li key={step.slug}>
                   {bloqueada ? (
-                    <div className={cls} aria-disabled="true">{content}</div>
+                    <div className={cls} aria-disabled="true">
+                      {content}
+                    </div>
                   ) : (
-                    <Link href={`/projetos/${projectId}/${step.slug}`} className={cls}>{content}</Link>
+                    <Link href={`/projetos/${projectId}/${step.slug}`} className={cls}>
+                      {content}
+                    </Link>
                   )}
                 </li>
               );
@@ -59,7 +67,9 @@ export function ProjectNav({ projectId, etapaAtual }: { projectId: string; etapa
       </aside>
 
       <div className="flex items-center justify-between border-b bg-panel px-4 py-3 md:hidden">
-        <Link href="/" className="text-sm text-muted-foreground">Seus vídeos</Link>
+        <Link href="/" className="text-sm text-muted-foreground">
+          Seus vídeos
+        </Link>
         <p className="text-sm font-medium">
           Etapa {Math.max(viewIdx, 0) + 1} de {STEPS.length}: {STEPS[Math.max(viewIdx, 0)].label}
         </p>

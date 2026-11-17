@@ -40,15 +40,17 @@ export class JobsService implements OnModuleInit {
 
   /** Remove jobs cujo alvo (cena, thumbnail ou exportação) já foi apagado. */
   private async limparOrfaos(): Promise<void> {
-    const [cenas, thumbs, exports] = await Promise.all([
+    const [cenas, thumbs, exports, visuais] = await Promise.all([
       this.prisma.scene.findMany({ select: { id: true } }),
       this.prisma.thumbnail.findMany({ select: { id: true } }),
       this.prisma.export.findMany({ select: { id: true } }),
+      this.prisma.visualAsset.findMany({ select: { id: true } }),
     ]);
     const grupos: { tipos: JobTipo[]; ids: string[] }[] = [
       { tipos: ['narracao', 'imagem'], ids: cenas.map((s) => s.id) },
       { tipos: ['thumbnail'], ids: thumbs.map((t) => t.id) },
       { tipos: ['render'], ids: exports.map((e) => e.id) },
+      { tipos: ['visual'], ids: visuais.map((v) => v.id) },
     ];
     for (const { tipos, ids } of grupos) {
       await this.prisma.job.deleteMany({

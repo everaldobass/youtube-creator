@@ -26,6 +26,15 @@ export interface OpcoesLegenda {
   margemV: number;
   porLinha: number;
   maxCaracteres: number;
+  /** Linha de base (parte de baixo do texto) onde a legenda é desenhada. */
+  ancoraY: number;
+  /** Família da fonte (precisa existir no servidor). */
+  fonteNome: string;
+  /** Traços do texto: o ASS liga negrito e itálico com flags próprias. */
+  negrito: boolean;
+  italico: boolean;
+  /** Cor do destaque karaokê, no formato do ASS (&H00BBGGRR). */
+  corDestaque: string;
 }
 
 const FIM_DE_FRASE = /[.!?…]["'”’)\]]?$/;
@@ -189,10 +198,23 @@ export function blocosDaCena(opcoes: {
   });
 }
 
+/** Converte "#RRGGBB" para a cor do ASS (&HAABBGGRR), opaca. */
+export function corAss(hex: string): string {
+  const limpo = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : 'C4B5FD';
+  const r = limpo.slice(0, 2);
+  const g = limpo.slice(2, 4);
+  const b = limpo.slice(4, 6);
+  return `&H00${b}${g}${r}`.toUpperCase();
+}
+
 export function opcoesDeLegenda(
   largura: number,
   altura: number,
   tamanho = 100,
+  posicao: 'baixo' | 'meio' | 'topo' = 'baixo',
+  fonteNome = 'Noto Sans',
+  cor = '#C4B5FD',
+  estilo: 'normal' | 'negrito' | 'italico' = 'negrito',
 ): OpcoesLegenda {
   const vertical = altura > largura;
   const escala = Math.min(160, Math.max(60, tamanho)) / 100;
@@ -200,10 +222,35 @@ export function opcoesDeLegenda(
   const margemH = Math.round(largura * 0.05);
   const margemV = Math.round(altura * (vertical ? 0.1 : 0.06));
   const porLinha = Math.max(16, Math.floor((largura - 2 * margemH) / (fonte * 0.55)));
-  return { largura, altura, fonte, margemH, margemV, porLinha, maxCaracteres: porLinha * 2 - 6 };
+  // "meio" e "topo" deslocam a linha de base do texto; a caixa acompanha a medição.
+  const ancoraY =
+    posicao === 'meio'
+      ? Math.round(altura * 0.52)
+      : posicao === 'topo'
+        ? margemV + Math.round(fonte * 2.2)
+        : altura - margemV;
+  return {
+    largura,
+    altura,
+    fonte,
+    margemH,
+    margemV,
+    porLinha,
+    maxCaracteres: porLinha * 2 - 6,
+    ancoraY,
+    fonteNome: fonteNome.trim() || 'Noto Sans',
+    negrito: estilo === 'negrito',
+    italico: estilo === 'italico',
+    corDestaque: corAss(cor),
+  };
 }
 
 const doisDigitos = (n: number) => String(n).padStart(2, '0');
+
+/** Flags de negrito e itálico do estilo ASS (-1 ligado, 0 desligado). */
+function flagsTraco(opcoes: OpcoesLegenda): string {
+  return `${opcoes.negrito ? -1 : 0},${opcoes.italico ? -1 : 0}`;
+}
 
 /** Tempo no formato do ASS: H:MM:SS.cc */
 function tempoAss(ms: number): string {
@@ -303,7 +350,7 @@ export function assDeMedicao(
       `{\\an2\\pos(${Math.round(opcoes.largura / 2)},${ancora})}${textoComQuebra(bloco, opcoes.porLinha)}`
     );
   });
-  const estilo = `Style: Medida,Noto Sans,${opcoes.fonte},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1`;
+  const estilo = `Style: Medida,${opcoes.fonteNome},${opcoes.fonte},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,${flagsTraco(opcoes)},0,0,100,100,0,0,1,0,0,2,0,0,0,1`;
   return { ass: [...cabecalho(opcoes, altura, [estilo]), ...linhas].join('\n') + '\n', altura };
 }
 
@@ -367,8 +414,9 @@ function desenhoDaCaixa(largura: number, altura: number, raio: number): string {
 }
 
 /**
- * Gera o arquivo ASS usado no FFmpeg: caixa escura arredondada atrás do texto, fonte
- * em negrito e cada palavra destacada em lilás conforme é falada (karaokê).
+ * Gera o arquivo ASS usado no FFmpeg: caixa escura arredondada atrás do texto,
+ * traço definido pelo projeto (normal, negrito ou itálico) e cada palavra
+ * destacada em lilás conforme é falada (karaokê).
  * Sem medições, cai no modo simples (uma caixa por linha) como reserva.
  */
 export function assDeLegendas(
@@ -378,18 +426,18 @@ export function assDeLegendas(
 ): string {
   const comCaixa = !!medidas && medidas.length === blocos.length;
   const estiloLegenda = comCaixa
-    ? `Style: Legenda,Noto Sans,${opcoes.fonte},&H00FFA6C6,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,${opcoes.margemH},${opcoes.margemH},${opcoes.margemV},1`
+    ? `Style: Legenda,${opcoes.fonteNome},${opcoes.fonte},${opcoes.corDestaque},&H00FFFFFF,&H00000000,&H00000000,${flagsTraco(opcoes)},0,0,100,100,0,0,1,0,0,2,${opcoes.margemH},${opcoes.margemH},${opcoes.margemV},1`
     : // Reserva: caixa do próprio libass, uma por linha.
-      `Style: Legenda,Noto Sans,${opcoes.fonte},&H00FFA6C6,&H00FFFFFF,&H55000000,&H55000000,-1,0,0,0,100,100,0,0,3,${Math.max(6, Math.round(opcoes.fonte * 0.3))},0,2,${opcoes.margemH},${opcoes.margemH},${opcoes.margemV},1`;
+      `Style: Legenda,${opcoes.fonteNome},${opcoes.fonte},${opcoes.corDestaque},&H00FFFFFF,&H55000000,&H55000000,${flagsTraco(opcoes)},0,0,100,100,0,0,3,${Math.max(6, Math.round(opcoes.fonte * 0.3))},0,2,${opcoes.margemH},${opcoes.margemH},${opcoes.margemV},1`;
   const estilos = [
     estiloLegenda,
-    `Style: Caixa,Noto Sans,${opcoes.fonte},&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1`,
+    `Style: Caixa,${opcoes.fonteNome},${opcoes.fonte},&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1`,
   ];
 
   const padX = Math.max(8, Math.round(opcoes.fonte * 0.45));
   const padY = Math.max(4, Math.round(opcoes.fonte * 0.2));
   const raio = Math.max(4, Math.round(opcoes.fonte * 0.25));
-  const ancoraY = opcoes.altura - opcoes.margemV;
+  const ancoraY = opcoes.ancoraY;
   const falas: string[] = [];
 
   blocos.forEach((bloco, indice) => {
@@ -418,7 +466,8 @@ export function assDeLegendas(
     }
 
     falas.push(
-      `Dialogue: 1,${tempoAss(bloco.inicioMs)},${tempoAss(bloco.fimMs)},Legenda,,0,0,0,,${texto}`,
+      `Dialogue: 1,${tempoAss(bloco.inicioMs)},${tempoAss(bloco.fimMs)},Legenda,,0,0,0,,` +
+        `{\\an2\\pos(${Math.round(opcoes.largura / 2)},${ancoraY})}${texto}`,
     );
   });
 

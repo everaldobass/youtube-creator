@@ -32,6 +32,8 @@ model Project {
   vozNome         String      @default("voz-masculina-1")
   vozInstrucaoTom String      @default("suave, claro, bem explicado")
   narracaoNatural Boolean     @default(true) // pausas e respiros naturais na narração (Fish Audio)
+  narracaoVelocidade Int      @default(97) // velocidade do TTS em % (85 a 110)
+  pronuncia       String      @default("") // dicionário de pronúncia: uma linha por termo ("IBGE=ibige")
   estiloVisual    String      @default("3D estilizado, cores quentes, iluminação suave, sem texto na imagem")
   descricao       String      @default("")
   efeitoCamera    String      @default("alternado") // nenhum | zoom-in | ... | alternado
@@ -44,6 +46,14 @@ model Project {
   musicaDucking   Boolean     @default(true) // abaixa a música enquanto há narração
   legendasAtivas  Boolean     @default(true) // queima as legendas sincronizadas no MP4
   legendaTamanho  Int         @default(100) // tamanho da fonte em % (60 a 160)
+  legendaPosicao  String      @default("baixo") // baixo | meio | topo
+  legendaEstilo   String      @default("negrito") // normal | negrito | italico
+  legendaFonte    String      @default("Noto Sans") // família usada no ASS (precisa existir no servidor)
+  legendaCor      String      @default("#C4B5FD") // cor do destaque karaokê
+  usarCameraSugerida Boolean  @default(false) // usa a sugestão de movimento de cada cena
+  editorialStatus String      @default("nao_revisado") // nao_revisado | aprovado | ressalvas | correcao
+  fontesRoteiro   String      @default("") // JSON: [{ titulo, autor, ano, url }]
+  revisaoFinalEm  DateTime?
   etapaAtual      String      @default("definicoes")
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -54,6 +64,9 @@ model Project {
   chapters        Chapter[]
   jobs            Job[]
   exports         Export[]
+  editorialReview EditorialReview[]
+  editorialIssues EditorialIssue[]
+  visualAssets    VisualAsset[]
 
   @@index([userId, updatedAt])
 }
@@ -85,8 +98,74 @@ model Scene {
   versaoMidia     Int     @default(0) // sobe a cada áudio/imagem novo; evita cache no navegador
   statusNarracao  String  @default("pendente") // pendente | gerado | aprovado | desatualizado
   statusImagem    String  @default("pendente")
+  sugestaoCamera  String  @default("") // zoom-in | zoom-out | panoramica-* | nenhum (sugerida pela IA)
+  alertaImagem    String  @default("") // problema encontrado ao comparar a imagem com a narração
+  audios          SceneAudio[]
 
   @@unique([projectId, numero])
+}
+
+/** Versões de áudio de uma cena; só uma fica `atual`. Permite comparar antes de escolher. */
+model SceneAudio {
+  id        String   @id @default(cuid())
+  sceneId   String
+  scene     Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  path      String
+  duracaoMs Int      @default(0)
+  atual     Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+
+  @@index([sceneId, atual])
+}
+
+/** Revisão editorial do roteiro (uma ativa por projeto; uma nova substitui a anterior). */
+model EditorialReview {
+  id            String           @id @default(cuid())
+  projectId     String
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  classificacao String // aprovado | ressalvas | correcao
+  resumo        String           @default("")
+  criadoEm      DateTime         @default(now())
+  issues        EditorialIssue[]
+
+  @@index([projectId, criadoEm])
+}
+
+/** Problema apontado pela revisão editorial, com aceite/rejeição individual. */
+model EditorialIssue {
+  id          String           @id @default(cuid())
+  reviewId    String
+  review      EditorialReview  @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cenaNumero  Int?
+  tipo        String // historico | geografico | cientifico | fonte | contradicao | generalizacao | contexto
+  trecho      String           @default("")
+  problema    String
+  explicacao  String           @default("")
+  sugestao    String           @default("")
+  fonte       String           @default("")
+  confianca   String           @default("media") // alta | media | baixa | nao_verificada
+  status      String           @default("pendente") // pendente | aceita | rejeitada
+
+  @@index([projectId, status])
+}
+
+/** Elemento visual explicativo (mapa histórico ou linha do tempo) ligado a uma cena. */
+model VisualAsset {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sceneNumero Int?
+  tipo       String   @default("mapa") // mapa | linha-do-tempo
+  titulo     String   @default("")
+  periodo    String   @default("")
+  descricao  String   @default("")
+  prompt     String   @default("")
+  imagemPath String?
+  criadoEm   DateTime @default(now())
+
+  @@index([projectId])
 }
 
 model Tag {

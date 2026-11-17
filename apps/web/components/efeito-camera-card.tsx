@@ -26,14 +26,19 @@ export function EfeitoCameraCard({
   onChange,
   cena,
   vertical,
+  usarSugerida,
+  onUsarSugerida,
 }: {
   projectId: string;
   valor: EfeitoCamera;
   onChange: (efeito: EfeitoCamera) => void;
   cena: SceneDto | undefined;
   vertical: boolean;
+  usarSugerida: boolean;
+  onUsarSugerida: (usar: boolean) => void;
 }) {
   const [salvando, setSalvando] = useState(false);
+  const [salvandoSugerida, setSalvandoSugerida] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   async function escolher(slug: EfeitoCamera) {
@@ -49,6 +54,21 @@ export function EfeitoCameraCard({
       setErro(e instanceof Error ? e.message : 'Não foi possível salvar o efeito.');
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function alternarSugerida(ativo: boolean) {
+    if (salvandoSugerida || ativo === usarSugerida) return;
+    onUsarSugerida(ativo);
+    setSalvandoSugerida(true);
+    setErro(null);
+    try {
+      await patch<ProjectDto>(`/projects/${projectId}`, { usarCameraSugerida: ativo });
+    } catch (e) {
+      onUsarSugerida(!ativo);
+      setErro(e instanceof Error ? e.message : 'Não foi possível salvar a preferência.');
+    } finally {
+      setSalvandoSugerida(false);
     }
   }
 
@@ -125,6 +145,21 @@ export function EfeitoCameraCard({
             {valor === 'alternado' &&
               ` Sequência: ${EFEITOS_ALTERNADOS.map(rotuloEfeito).join(' → ')}.`}
           </p>
+          <label className="mt-3 flex cursor-pointer items-start gap-2 border-t pt-3 text-sm">
+            <input
+              type="checkbox"
+              checked={usarSugerida}
+              onChange={(e) => alternarSugerida(e.target.checked)}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span>
+              Usar o movimento sugerido em cada cena
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Quando a cena tem uma sugestão (criada no roteiro), ela substitui o efeito escolhido
+                acima. Sem sugestão, vale este efeito.
+              </span>
+            </span>
+          </label>
           {erro && (
             <div className="mt-2">
               <ErrorBox message={erro} />

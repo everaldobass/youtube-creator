@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { Copy, Download, FileArchive, Film, Sparkles } from 'lucide-react';
+import { Copy, Download, FileArchive, Film } from 'lucide-react';
 import {
   formatarTempo,
   IDIOMA_INFO,
@@ -18,6 +18,8 @@ import { ErrorBox } from '@/components/error-box';
 import { LegendasCard } from '@/components/legendas-card';
 import { MusicCard } from '@/components/music-card';
 import { PreviewPlayer } from '@/components/preview-player';
+import { QualidadeCard } from '@/components/qualidade-card';
+import { StepHeader } from '@/components/step-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -45,6 +47,11 @@ export function VideoView({
   const [efeito, setEfeito] = useState<EfeitoCamera>(initial.efeitoCamera);
   const [legendas, setLegendas] = useState(initial.legendasAtivas);
   const [tamanhoLegenda, setTamanhoLegenda] = useState(project.legendaTamanho);
+  const [posicaoLegenda, setPosicaoLegenda] = useState(project.legendaPosicao);
+  const [estiloLegenda, setEstiloLegenda] = useState(project.legendaEstilo);
+  const [fonteLegenda, setFonteLegenda] = useState(project.legendaFonte);
+  const [corLegenda, setCorLegenda] = useState(project.legendaCor);
+  const [usarSugerida, setUsarSugerida] = useState(project.usarCameraSugerida);
   const [musica, setMusica] = useState(music);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -60,7 +67,8 @@ export function VideoView({
   usePolling(carregar, montando, 2000);
 
   const pronto = status.mp4?.status === 'concluido';
-  const falhou = !montando && (status.mp4?.status === 'erro' || status.jobs.some((j) => j.status === 'erro'));
+  const falhou =
+    !montando && (status.mp4?.status === 'erro' || status.jobs.some((j) => j.status === 'erro'));
   const motivo = status.mp4?.erro ?? status.jobs.find((j) => j.status === 'erro')?.erro ?? null;
   const podeMontar = status.faltando.length === 0 && scenes.length > 0 && !montando;
 
@@ -87,42 +95,70 @@ export function VideoView({
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">Etapa 9 de 9</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {pronto ? 'Seu vídeo para o YouTube está pronto!' : 'Vídeo final e publicação'}
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Confira a prévia, monte o MP4 e baixe o pacote. A publicação no YouTube é manual: copie
-            título, tags e descrição abaixo.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="lg" onClick={montar} disabled={!podeMontar || enviando}>
-            <Film className="size-4" />
-            {montando ? 'Montando o vídeo...' : pronto ? 'Montar de novo' : 'Exportar vídeo (MP4)'}
-          </Button>
-          {pronto && !montando && (
-            <Button variant="outline" size="lg" asChild>
-              <a href={`${API_URL}/projects/${project.id}/export/mp4?download=1`}>
-                <Download className="size-4" /> Baixar MP4
+    <div className="mx-auto max-w-[1022px]">
+      <StepHeader
+        etapa="Etapa 9 de 9"
+        title={pronto ? 'Seu vídeo está pronto!' : 'Vídeo final e publicação'}
+        footer={
+          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-border/80 bg-card/60 p-1">
+            <span className="px-1.5 text-xs text-muted-foreground">YouTube Studio:</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!project.tituloEscolhido}
+              onClick={() => copiar('titulo', project.tituloEscolhido)}
+            >
+              <Copy className="size-4" /> {copiado === 'titulo' ? 'Copiado' : 'Título'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={tags.length === 0}
+              onClick={() => copiar('tags', tags.join(','))}
+            >
+              <Copy className="size-4" /> {copiado === 'tags' ? 'Copiado' : 'Tags'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!project.descricao}
+              onClick={() => copiar('desc', project.descricao)}
+            >
+              <Copy className="size-4" /> {copiado === 'desc' ? 'Copiado' : 'Descrição'}
+            </Button>
+          </div>
+        }
+        actions={
+          <>
+            <Button onClick={montar} disabled={!podeMontar || enviando}>
+              <Film className="size-4" />
+              {montando
+                ? 'Montando o vídeo...'
+                : pronto
+                  ? 'Montar de novo'
+                  : 'Exportar vídeo (MP4)'}
+            </Button>
+            {pronto && !montando && (
+              <Button variant="outline" asChild>
+                <a href={`${API_URL}/projects/${project.id}/export/mp4?download=1`}>
+                  <Download className="size-4" /> Baixar MP4
+                </a>
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <a href={`${API_URL}/projects/${project.id}/export/zip`}>
+                <FileArchive className="size-4" /> Baixar ZIP
               </a>
             </Button>
-          )}
-          <Button variant="outline" size="lg" asChild>
-            <a href={`${API_URL}/projects/${project.id}/export/zip`}>
-              <FileArchive className="size-4" /> Baixar ZIP
-            </a>
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {status.faltando.length > 0 && (
         <div className="mt-4">
-          <ErrorBox message={`Faltam narração ou imagem atualizadas nas cenas: ${status.faltando.join(', ')}. Volte às etapas 4 e 5.`} />
+          <ErrorBox
+            message={`Faltam narração ou imagem atualizadas nas cenas: ${status.faltando.join(', ')}. Volte às etapas 4 e 5.`}
+          />
         </div>
       )}
       {erro && (
@@ -132,19 +168,24 @@ export function VideoView({
       )}
       {falhou && (
         <div className="mt-4">
-          <ErrorBox message={motivo ?? 'A montagem falhou.'} onRetry={podeMontar ? montar : undefined} />
+          <ErrorBox
+            message={motivo ?? 'A montagem falhou.'}
+            onRetry={podeMontar ? montar : undefined}
+          />
         </div>
       )}
       {montando && (
         <p className="mt-4 text-xs text-muted-foreground" aria-live="polite">
-          A montagem roda no servidor e pode levar alguns minutos. Pode sair desta tela: o processo continua.
+          A montagem roda no servidor e pode levar alguns minutos. Pode sair desta tela: o processo
+          continua.
         </p>
       )}
       {pronto && !montando && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Badge variant="success">H.264 + AAC, {status.resolucao}</Badge>
           <span className="text-xs text-muted-foreground">
-            Se mudar roteiro, narração, imagens, movimento, legendas ou música depois, monte o vídeo de novo.
+            Se mudar roteiro, narração, imagens, movimento, legendas ou música depois, monte o vídeo
+            de novo.
           </span>
         </div>
       )}
@@ -164,6 +205,10 @@ export function VideoView({
             efeitoCamera={efeito}
             legendas={legendas}
             escala={tamanhoLegenda}
+            posicao={posicaoLegenda}
+            estilo={estiloLegenda}
+            cor={corLegenda}
+            fonte={fonteLegenda}
           />
         ) : (
           <Card className="p-8 text-center text-sm text-muted-foreground">
@@ -175,16 +220,46 @@ export function VideoView({
       <Card className="mt-4 p-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_11rem]">
           <div className="min-w-0">
-            <h2 className="font-semibold leading-snug">{project.tituloEscolhido || 'Vídeo sem título'}</h2>
+            <h2 className="font-semibold leading-snug">
+              {project.tituloEscolhido || 'Vídeo sem título'}
+            </h2>
             <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Formato</dt><dd className="text-right">{vertical ? 'Shorts' : 'Vídeo longo'}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Idioma</dt><dd className="text-right">{IDIOMA_INFO[project.idioma].rotulo}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Cenas</dt><dd className="text-right">{scenes.length}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Duração</dt><dd className="text-right">{formatarTempo(status.totalSegundos)}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Resolução</dt><dd className="text-right">{status.resolucao}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Câmera</dt><dd className="text-right">{rotuloEfeito(efeito)}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Legendas</dt><dd className="text-right">{legendas ? `Queimadas (${tamanhoLegenda}%)` : 'Desligadas'}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Música</dt><dd className="max-w-[10rem] truncate text-right">{musica.escolhida?.nome || 'Sem música'}</dd></div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Formato</dt>
+                <dd className="text-right">{vertical ? 'Shorts' : 'Vídeo longo'}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Idioma</dt>
+                <dd className="text-right">{IDIOMA_INFO[project.idioma].rotulo}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Cenas</dt>
+                <dd className="text-right">{scenes.length}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Duração</dt>
+                <dd className="text-right">{formatarTempo(status.totalSegundos)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Resolução</dt>
+                <dd className="text-right">{status.resolucao}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Câmera</dt>
+                <dd className="text-right">{rotuloEfeito(efeito)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Legendas</dt>
+                <dd className="text-right">
+                  {legendas ? `Queimadas (${tamanhoLegenda}%)` : 'Desligadas'}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Música</dt>
+                <dd className="max-w-[10rem] truncate text-right">
+                  {musica.escolhida?.nome || 'Sem música'}
+                </dd>
+              </div>
             </dl>
           </div>
           {thumbnail?.temImagem && (
@@ -210,6 +285,8 @@ export function VideoView({
             onChange={setEfeito}
             cena={scenes.find((s) => s.temImagem) ?? scenes[0]}
             vertical={vertical}
+            usarSugerida={usarSugerida}
+            onUsarSugerida={setUsarSugerida}
           />
           <LegendasCard
             projectId={project.id}
@@ -217,6 +294,14 @@ export function VideoView({
             onChange={setLegendas}
             tamanho={tamanhoLegenda}
             onTamanho={setTamanhoLegenda}
+            posicao={posicaoLegenda}
+            onPosicao={setPosicaoLegenda}
+            estilo={estiloLegenda}
+            onEstilo={setEstiloLegenda}
+            fonte={fonteLegenda}
+            onFonte={setFonteLegenda}
+            cor={corLegenda}
+            onCor={setCorLegenda}
             cena={scenes.find((s) => s.temImagem) ?? scenes[0]}
             vertical={vertical}
           />
@@ -224,31 +309,24 @@ export function VideoView({
         </div>
       </section>
 
-      <Card className="mt-6 p-4">
-        <h2 className="flex items-center gap-2 font-semibold"><Sparkles className="size-4 text-ai" /> Textos para colar no YouTube Studio</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" disabled={!project.tituloEscolhido} onClick={() => copiar('titulo', project.tituloEscolhido)}>
-            <Copy className="size-4" /> {copiado === 'titulo' ? 'Copiado' : 'Copiar título'}
-          </Button>
-          <Button variant="outline" size="sm" disabled={tags.length === 0} onClick={() => copiar('tags', tags.join(','))}>
-            <Copy className="size-4" /> {copiado === 'tags' ? 'Copiado' : 'Copiar tags'}
-          </Button>
-          <Button variant="outline" size="sm" disabled={!project.descricao} onClick={() => copiar('desc', project.descricao)}>
-            <Copy className="size-4" /> {copiado === 'desc' ? 'Copiado' : 'Copiar descrição'}
-          </Button>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          O ZIP traz imagens, áudios, legendas .srt, tempos, thumbnails, título, tags, descrição e, quando
-          houver, a música de fundo com os créditos.
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Se o YouTube pedir, marque o vídeo como conteúdo alterado ou sintético ao publicar, e revise o conteúdo gerado.
-        </p>
-      </Card>
+      <QualidadeCard projectId={project.id} />
+
+      <p className="mt-6 text-xs text-muted-foreground">
+        O ZIP traz imagens, áudios, legendas .srt, tempos, thumbnails, título, tags, descrição e,
+        quando houver, a música de fundo com os créditos.
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Se o YouTube pedir, marque o vídeo como conteúdo alterado ou sintético ao publicar, e revise
+        o conteúdo gerado.
+      </p>
 
       <div className="mt-8 flex items-center justify-between">
-        <Button variant="outline" asChild><Link href={`/projetos/${project.id}/descricao`}>Voltar</Link></Button>
-        <Button asChild><Link href="/">Concluir e ver meus vídeos</Link></Button>
+        <Button variant="outline" asChild>
+          <Link href={`/projetos/${project.id}/descricao`}>Voltar</Link>
+        </Button>
+        <Button asChild>
+          <Link href="/">Concluir e ver meus vídeos</Link>
+        </Button>
       </div>
     </div>
   );

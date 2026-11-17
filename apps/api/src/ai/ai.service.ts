@@ -136,24 +136,57 @@ export class AiService {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json' },
       },
-      (data) => {
-        const texto = this.partes(data).map((p) => p.text ?? '').join('');
-        if (!texto.trim()) throw new Error('O modelo devolveu uma resposta vazia');
-        const limpo = texto
-          .trim()
-          .replace(/^```(?:json)?/i, '')
-          .replace(/```$/, '')
-          .trim();
-        return schema.parse(JSON.parse(limpo));
-      },
+      (data) => this.parseJson(data, schema),
     );
+  }
+
+  /**
+   * JSON a partir de texto + imagens (verificação visual). Usa o modelo de texto
+   * quando ele aceita imagem; se o modelo configurado recusar, o erro é claro.
+   */
+  async generateJsonWithImages<T>(
+    prompt: string,
+    schema: ZodType<T>,
+    imagens: { data: Buffer; mime: string }[],
+  ): Promise<T> {
+    const model = this.modelo('GEMINI_MODEL_TEXT');
+    const parts: Parte[] = [
+      { text: prompt },
+      ...imagens.map((i) => ({
+        inlineData: { mimeType: i.mime, data: i.data.toString('base64') },
+      })),
+    ];
+    return this.executar(
+      model,
+      {
+        contents: [{ role: 'user', parts }],
+        generationConfig: { responseMimeType: 'application/json' },
+      },
+      (data) => this.parseJson(data, schema),
+    );
+  }
+
+  private parseJson<T>(data: GeminiResponse, schema: ZodType<T>): T {
+    const texto = this.partes(data).map((p) => p.text ?? '').join('');
+    if (!texto.trim()) throw new Error('O modelo devolveu uma resposta vazia');
+    const limpo = texto
+      .trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/, '')
+      .trim();
+    return schema.parse(JSON.parse(limpo));
   }
 
   // ---------- voz (Fish Audio) ----------
   // A Fish Audio é um TTS: o campo `text` é lido literalmente. As marcações
   // `[calm]` e `[break]` são interpretadas pelo modelo S2 para dar pausas e
   // um tom mais natural (ver `textoParaNarracao`).
-  async generateSpeech(text: string, natural = false, idioma: Idioma = 'pt-BR'): Promise<AudioGerado> {
+  async generateSpeech(
+    text: string,
+    natural = false,
+    idioma: Idioma = 'pt-BR',
+    velocidade = 97,
+  ): Promise<AudioGerado> {
     const apiKey = process.env.FISH_API_KEY;
     const referenceId = process.env.FISH_VOICE_ID;
     const model = process.env.FISH_MODEL_TTS || 's2.1-pro-free';
@@ -165,6 +198,9 @@ export class AiService {
     }
     const limpo = text.trim();
     if (!limpo) throw new Error('Texto vazio para narração.');
+
+    // Velocidade só entra quando a narração natural está ligada; 100% é o padrão da voz.
+    const speed = Math.min(1.3, Math.max(0.7, (natural ? velocidade : 100) / 100));
 
     let ultimoErro = 'Falha desconhecida';
     for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
@@ -184,7 +220,7 @@ export class AiService {
             // Ajuda a normalizar números, datas e unidades no idioma do vídeo.
             language: idioma,
             // Um pouco mais devagar e com pausas marcadas no texto: menos robótico.
-            ...(natural ? { prosody: { speed: 0.97 } } : {}),
+            ...(natural ? { prosody: { speed } } : {}),
           }),
           signal: AbortSignal.timeout(120_000),
         });

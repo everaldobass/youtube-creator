@@ -17,12 +17,21 @@ export class ImagesController {
 
   @Get('projects/:id/images/prompts.md')
   async prompts(@Param('id') id: string, @Req() req: Request) {
-    const base = `${req.protocol}://${req.get('host')}`;
+    // Link público (fora do localhost) quando configurado; senão, o host da requisição.
+    const base = (process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.get('host')}`).replace(
+      /\/+$/,
+      '',
+    );
     const { nome, markdown } = await this.images.promptsMarkdown(id, base);
     return new StreamableFile(Buffer.from(markdown, 'utf8'), {
       type: 'text/markdown; charset=utf-8',
       disposition: `attachment; filename="${nome}"`,
     });
+  }
+
+  @Post('projects/:id/images/verify')
+  verify(@Param('id') id: string) {
+    return this.images.verify(id);
   }
 
   @Patch('projects/:id/style')

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Copy, Download, ImageIcon, RefreshCw, Sparkles, Upload } from 'lucide-react';
+import { Check, Copy, Download, ImageIcon, Sparkles, Upload } from 'lucide-react';
 import {
   MAX_PALAVRAS_THUMB,
   contarPalavras,
@@ -11,19 +11,23 @@ import {
 } from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
-import { JobError } from '@/components/job-error';
+import { StepHeader } from '@/components/step-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { API_URL, apiFetch, patch, post } from '@/lib/client-api';
-import { jobDoAlvo, jobsAtivos } from '@/lib/jobs';
-import { usePolling } from '@/lib/use-polling';
+import { API_URL, patch, post } from '@/lib/client-api';
 import { cn } from '@/lib/utils';
 
 const MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
-export function ThumbnailsView({ projectId, initial }: { projectId: string; initial: ThumbnailsResponse }) {
+export function ThumbnailsView({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: ThumbnailsResponse;
+}) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const [textos, setTextos] = useState<Record<string, string>>(
@@ -37,18 +41,12 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
   const uploadAlvo = useRef<string | null>(null);
   const inputArquivo = useRef<HTMLInputElement>(null);
 
-  const carregar = useCallback(async () => {
-    const r = await apiFetch<ThumbnailsResponse>(`/projects/${projectId}/thumbnails`);
-    setData(r);
-    setTextos((atual) => ({ ...Object.fromEntries(r.thumbnails.map((t) => [t.id, t.textoNaImagem])), ...atual }));
-  }, [projectId]);
-
-  const ativos = jobsAtivos(data.jobs);
-  usePolling(carregar, ativos.length > 0);
-
   const escolhida = data.thumbnails.find((t) => t.escolhida);
 
-  async function executar(fn: () => Promise<ThumbnailsResponse>, aoTerminar?: (r: ThumbnailsResponse) => void) {
+  async function executar(
+    fn: () => Promise<ThumbnailsResponse>,
+    aoTerminar?: (r: ThumbnailsResponse) => void,
+  ) {
     setErro(null);
     try {
       const r = await fn();
@@ -145,18 +143,18 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <p className="text-sm text-muted-foreground">Etapa 7 de 9</p>
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">2 variações de thumbnail (1280×720)</h1>
-        <Button variant="ai" onClick={gerarTodas} disabled={gerando || ativos.length > 0}>
-          <Sparkles className="size-4" />
-          {gerando ? 'Gerando textos...' : data.thumbnails.length ? 'Gerar 2 novos textos' : 'Gerar 2 textos'}
-        </Button>
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Cada opção tem texto de até {MAX_PALAVRAS_THUMB} palavras. Clique em <strong>Copiar prompt</strong>, gere a imagem
-        em 1280×720 (16:9) no Flow/Nano Banana e clique em <strong>Enviar imagem</strong>. O app recorta para 1280×720.      </p>
+    <div className="mx-auto max-w-[1022px]">
+      <StepHeader
+        etapa="Etapa 7 de 9"
+        title="Thumbnails | Google Flow | CTR"
+        description="Duas variações em 1280×720 para comparar. Copie o prompt, gere a imagem no Flow/Nano Banana e envie o arquivo."
+        actions={
+          <Button variant="ai" onClick={gerarTodas} disabled={gerando}>
+            <Sparkles className="size-4" />
+            {gerando ? 'Gerando thumbnail...' : 'Gerar thumbnail'}
+          </Button>
+        }
+      />
 
       <input
         ref={inputArquivo}
@@ -183,8 +181,6 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
 
       <ul className="mt-6 grid gap-4 sm:grid-cols-2">
         {data.thumbnails.map((t) => {
-          const job = jobDoAlvo(data.jobs, t.id);
-          const emAndamento = job?.status === 'fila' || job?.status === 'executando';
           const texto = textos[t.id] ?? t.textoNaImagem;
           const palavras = contarPalavras(texto);
           return (
@@ -196,16 +192,11 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
                     <img
                       src={`${API_URL}/thumbnails/${t.id}/image?v=${encodeURIComponent(t.versao)}`}
                       alt={`Thumbnail ${t.variacao}: ${t.textoNaImagem}`}
-                      className={cn('size-full object-cover', emAndamento && 'opacity-40')}
+                      className="size-full object-cover"
                     />
                   ) : (
                     <div className="flex size-full items-center justify-center text-muted-foreground">
                       <ImageIcon className="size-8" />
-                    </div>
-                  )}
-                  {emAndamento && (
-                    <div className="absolute inset-0 flex animate-pulse items-center justify-center bg-background/50 text-sm font-medium">
-                      {job?.status === 'fila' ? 'Na fila...' : 'Gerando...'}
                     </div>
                   )}
                   <Badge className="absolute left-2 top-2 bg-background/80">1280×720</Badge>
@@ -216,9 +207,15 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
                       value={texto}
                       onChange={(e) => setTextos((x) => ({ ...x, [t.id]: e.target.value }))}
                       onBlur={() => salvarTexto(t.id)}
+                      maxLength={200}
                       aria-label={`Texto da thumbnail ${t.variacao}`}
                     />
-                    <p className={cn('mt-1 text-xs', palavras > MAX_PALAVRAS_THUMB ? 'text-warning' : 'text-muted-foreground')}>
+                    <p
+                      className={cn(
+                        'mt-1 text-xs',
+                        palavras > MAX_PALAVRAS_THUMB ? 'text-warning' : 'text-muted-foreground',
+                      )}
+                    >
                       {palavras} de {MAX_PALAVRAS_THUMB} palavras
                     </p>
                   </div>
@@ -227,22 +224,18 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
                       size="sm"
                       variant={t.escolhida ? 'default' : 'outline'}
                       disabled={!t.temImagem}
-                      onClick={() => executar(() => post<ThumbnailsResponse>(`/thumbnails/${t.id}/select`))}
+                      onClick={() =>
+                        executar(() => post<ThumbnailsResponse>(`/thumbnails/${t.id}/select`))
+                      }
                       aria-pressed={t.escolhida}
                     >
-                      {t.escolhida ? (<><Check className="size-4" /> Escolhida</>) : 'Escolher'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={emAndamento || palavras > MAX_PALAVRAS_THUMB}
-                      onClick={async () => {
-                        await salvarTexto(t.id);
-                        await executar(() => post<ThumbnailsResponse>(`/thumbnails/${t.id}/regenerate`));
-                      }}
-                      title="Gera a imagem com IA (precisa de cota/billing do Gemini)"
-                    >
-                      <RefreshCw className="size-4" /> Refazer
+                      {t.escolhida ? (
+                        <>
+                          <Check className="size-4" /> Escolhida
+                        </>
+                      ) : (
+                        'Escolher'
+                      )}
                     </Button>
                     <Button
                       size="sm"
@@ -255,7 +248,7 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={enviando || emAndamento}
+                      disabled={enviando}
                       onClick={() => escolherArquivo(t.id)}
                     >
                       <Upload className="size-4" /> Enviar imagem
@@ -268,7 +261,6 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
                       </Button>
                     )}
                   </div>
-                  {job && <JobError job={job} onRetried={carregar} />}
                 </div>
               </Card>
             </li>
@@ -279,7 +271,7 @@ export function ThumbnailsView({ projectId, initial }: { projectId: string; init
       <ActionBar
         voltarHref={`/projetos/${projectId}/tags`}
         onContinuar={continuar}
-        continuarDisabled={!escolhida || ativos.length > 0}
+        continuarDisabled={!escolhida}
         busy={continuando}
         dica={!escolhida ? 'Envie uma imagem e escolha a melhor' : undefined}
       />

@@ -2,19 +2,28 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mic } from 'lucide-react';
-import { LIMITES_FORMATO, IDIOMAS, IDIOMA_INFO, type Formato, type Idioma, type ProjectDto } from '@yt/shared';
-import { ActionBar } from '@/components/action-bar';
+import { Eraser, Mic, Sparkles } from 'lucide-react';
+import {
+  LIMITES_FORMATO,
+  IDIOMAS,
+  IDIOMA_INFO,
+  type Formato,
+  type Idioma,
+  type ProjectDto,
+} from '@yt/shared';
 import { ErrorBox } from '@/components/error-box';
+import { StepHeader } from '@/components/step-header';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { patch, post } from '@/lib/client-api';
 import { cn } from '@/lib/utils';
 
 type Estado = 'salvo' | 'salvando' | 'erro';
 
 const FORMATO_INFO: Record<Formato, { titulo: string; detalhe: string }> = {
-  longo: { titulo: 'Vídeo longo', detalhe: '16:9, até 20 minutos' },
+  longo: { titulo: 'Vídeo longo', detalhe: '16:9, até 30 minutos' },
   shorts: { titulo: 'Shorts', detalhe: '9:16, menos de 3 minutos' },
 };
 
@@ -35,6 +44,7 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
   const primeira = useRef(true);
 
   const maxMinutos = form.formato === 'shorts' ? 2 : LIMITES_FORMATO.longo.maxMinutos;
+  const presets = form.formato === 'shorts' ? [1, 2] : [5, 10, 15, 20, 30];
 
   function set<K extends keyof typeof form>(chave: K, valor: (typeof form)[K]) {
     setForm((f) => ({ ...f, [chave]: valor }));
@@ -50,6 +60,11 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
       formato,
       duracaoMinutos: formato === 'shorts' ? Math.min(f.duracaoMinutos, 1) : f.duracaoMinutos,
     }));
+  }
+
+  /** Limpa apenas o título/ideia e o tema; o resto da definição fica como está. */
+  function limparCampos() {
+    setForm((f) => ({ ...f, ideia: '', tema: '' }));
   }
 
   // Salvamento automático com pequena espera depois da última digitação.
@@ -78,7 +93,8 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
     try {
       await patch(`/projects/${project.id}`, form);
       await post(`/projects/${project.id}/advance`, { etapa: 'definicoes' });
-      router.push(`/projetos/${project.id}/titulos`);
+      // A etapa 2 gera os títulos ao abrir (ver TitulosView) — o botão faz o que promete.
+      router.push(`/projetos/${project.id}/titulos?gerar=1`);
       router.refresh();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar');
@@ -87,26 +103,43 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Etapa 1 de 9</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Crie seu próximo vídeo</h1>
-        </div>
-        <p
-          className={cn(
-            'mt-2 text-xs',
-            estado === 'erro' ? 'text-primary' : 'text-muted-foreground',
-          )}
-          aria-live="polite"
-        >
-          {estado === 'salvando' && 'Salvando...'}
-          {estado === 'salvo' && 'Salvo automaticamente'}
-          {estado === 'erro' && 'Não foi possível salvar'}
-        </p>
-      </div>
+    <div className="mx-auto max-w-[1022px]">
+      <StepHeader
+        etapa="Etapa 1 de 9"
+        title="Crie seu próximo vídeo"
+        description="Descreva o assunto, escolha o formato e defina a duração. O YouStudio transforma isso em títulos, roteiro, narração e imagens."
+        meta={
+          <span
+            className={cn(
+              'flex items-center gap-1.5 text-xs',
+              estado === 'erro' ? 'text-primary' : 'text-muted-foreground',
+            )}
+            aria-live="polite"
+          >
+            <span
+              className={cn(
+                'size-1.5 rounded-full',
+                estado === 'erro'
+                  ? 'bg-primary'
+                  : estado === 'salvando'
+                    ? 'bg-warning'
+                    : 'bg-success',
+              )}
+            />
+            {estado === 'salvando' && 'Salvando...'}
+            {estado === 'salvo' && 'Salvo automaticamente'}
+            {estado === 'erro' && 'Não foi possível salvar'}
+          </span>
+        }
+        actions={
+          <Button size="lg" onClick={continuar} disabled={!podeContinuar || busy}>
+            <Sparkles className="size-4" />
+            {busy ? 'Salvando...' : 'Salvar e gerar títulos'}
+          </Button>
+        }
+      />
 
-      <section className="mt-8 space-y-6">
+      <section className="mt-6 space-y-6">
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium">Idioma do vídeo</legend>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -136,8 +169,8 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
             ))}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Vale para títulos, roteiro, narração, tags, thumbnails e descrição. Mudar depois de gerar
-            não refaz os textos automaticamente.
+            Vale para títulos, roteiro, narração, tags, thumbnails e descrição. Mudar depois de
+            gerar não refaz os textos automaticamente.
           </p>
         </fieldset>
 
@@ -167,26 +200,52 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
           </div>
         </fieldset>
 
-        <div>
-          <Label htmlFor="ideia">Título ou ideia (opcional)</Label>
-          <Input
-            id="ideia"
-            value={form.ideia}
-            onChange={(e) => set('ideia', e.target.value)}
-            placeholder={IDIOMA_INFO[form.idioma].exemplo}
-          />
-        </div>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium">Assunto do vídeo</h2>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={limparCampos}
+              disabled={!form.ideia && !form.tema}
+            >
+              <Eraser className="size-4" /> Limpar campos
+            </Button>
+          </div>
 
-        <div className="grid gap-6 sm:grid-cols-2">
           <div>
-            <Label htmlFor="tema">Tema</Label>
+            <Label htmlFor="ideia">Título ou ideia (opcional)</Label>
             <Input
+              id="ideia"
+              value={form.ideia}
+              onChange={(e) => set('ideia', e.target.value)}
+              maxLength={200}
+              placeholder={IDIOMA_INFO[form.idioma].exemplo}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="tema">Tema e contexto</Label>
+            <Textarea
               id="tema"
               value={form.tema}
               onChange={(e) => set('tema', e.target.value)}
-              placeholder="Ex.: astronomia para iniciantes"
+              maxLength={1000}
+              rows={4}
+              className="min-h-28"
+              placeholder={
+                form.idioma === 'pt-BR'
+                  ? 'Escreva de 3 a 4 linhas sobre o assunto: o que o vídeo mostra, qual é o ângulo e o que o espectador vai aprender.'
+                  : 'Write 3–4 lines about the subject: what the video shows, its angle, and what the viewer will learn.'
+              }
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {form.tema.length} de 1000 caracteres. Um bom contexto deixa títulos e roteiro mais
+              específicos.
+            </p>
           </div>
+
           <div>
             <Label htmlFor="publico">Público</Label>
             <Input
@@ -199,9 +258,25 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
         </div>
 
         <div>
-          <Label htmlFor="duracao">
-            Duração do vídeo: {form.duracaoMinutos} {form.duracaoMinutos === 1 ? 'minuto' : 'minutos'}
-          </Label>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Label htmlFor="duracao">
+              Duração do vídeo: {form.duracaoMinutos}{' '}
+              {form.duracaoMinutos === 1 ? 'minuto' : 'minutos'}
+            </Label>
+            <div className="flex flex-wrap justify-end gap-2">
+              {presets.map((m) => (
+                <Button
+                  key={m}
+                  type="button"
+                  variant={form.duracaoMinutos === m ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => set('duracaoMinutos', m)}
+                >
+                  {m} min
+                </Button>
+              ))}
+            </div>
+          </div>
           <input
             id="duracao"
             type="range"
@@ -209,12 +284,12 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
             max={maxMinutos}
             value={form.duracaoMinutos}
             onChange={(e) => set('duracaoMinutos', Number(e.target.value))}
-            className="w-full accent-primary"
+            className="mt-2 w-full accent-primary"
           />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-muted-foreground">
             {form.formato === 'shorts'
               ? 'Shorts têm menos de 3 minutos; o ideal é até 1 minuto.'
-              : 'Vídeos longos vão até 20 minutos.'}
+              : 'Vídeos longos vão até 30 minutos.'}
           </p>
         </div>
 
@@ -241,17 +316,9 @@ export function DefinicoesForm({ project }: { project: ProjectDto }) {
 
       {erro && (
         <div className="mt-6">
-          <ErrorBox message={erro} />
+          <ErrorBox message={erro} onRetry={continuar} />
         </div>
       )}
-
-      <ActionBar
-        onContinuar={continuar}
-        continuarLabel="Salvar e gerar títulos"
-        continuarDisabled={!podeContinuar}
-        busy={busy}
-        dica={podeContinuar ? undefined : 'Preencha o tema ou a ideia'}
-      />
     </div>
   );
 }

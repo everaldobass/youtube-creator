@@ -19,7 +19,7 @@ export function ActionBar({
 }) {
   return (
     <div className="sticky bottom-0 -mx-6 mt-10 border-t bg-background/95 px-6 py-4 backdrop-blur md:-mx-10 md:px-10">
-      <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
+      <div className="mx-auto flex max-w-[1022px] items-center justify-between gap-4">
         {voltarHref ? (
           <Button asChild variant="outline">
             <Link href={voltarHref}>Voltar</Link>

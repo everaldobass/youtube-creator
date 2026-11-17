@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Job, Scene } from '@prisma/client';
+import { createHash } from 'crypto';
 import { ImagesResponse, ProjectDto, UploadImageInput } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
-import { promptImagem } from '../ai/prompts';
+import { promptImagem, promptVerificacaoImagem, verificacaoImagemGenSchema } from '../ai/prompts';
 import { JobsService } from '../jobs/jobs.service';
 import { EXT_PARA_MIME, MIME_PARA_EXT, chaveImagem, extDaChave } from '../media/files';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,6 +27,7 @@ export class ImagesService implements OnModuleInit {
 
   onModuleInit() {
     this.jobs.register('imagem', (job: Job) => this.gerarCena(job.alvoId!));
+    this.jobs.register('verificacao', (job: Job) => this.verificarProjeto(job.projectId));
   }
 
   private promptDa(project: ProjectDto, scene: Scene): string {
@@ -44,8 +46,92 @@ export class ImagesService implements OnModuleInit {
       estiloVisual: project.estiloVisual,
       proporcao: proporcaoDe(project),
       scenes: rows.map((s) => ({ ...toSceneDto(s), promptImagem: this.promptDa(project, s) })),
-      jobs: await this.jobs.listar(projectId, ['imagem']),
+      jobs: [
+        ...(await this.jobs.listar(projectId, ['imagem'])),
+        ...(await this.jobs.listar(projectId, ['verificacao'])),
+      ],
     };
+  }
+
+  /** Enfileira a conferência visual de todas as cenas (imagem × narração). */
+  async verify(projectId: string): Promise<ImagesResponse> {
+    await this.projects.get(projectId);
+    const cenas = await this.prisma.scene.findMany({ where: { projectId } });
+    if (!cenas.some((c) => c.imagemPath)) {
+      throw new BadRequestException('Envie ou gere ao menos uma imagem antes de verificar.');
+    }
+    await this.jobs.enqueue(projectId, 'verificacao');
+    return this.response(projectId);
+  }
+
+  /**
+   * Executado pela fila: procura imagens repetidas (mesmo arquivo) e compara
+   * cada imagem com a narração da cena usando o modelo com visão.
+   */
+  private async verificarProjeto(projectId: string): Promise<void> {
+    const project = await this.projects.get(projectId);
+    const cenas = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
+    const comImagem = cenas.filter((c) => c.imagemPath);
+    if (!comImagem.length) return;
+
+    // 1) Imagens idênticas: sinal claro de cena repetida.
+    const porHash = new Map<string, { numero: number; hash: string }[]>();
+    const dados = new Map<number, Buffer>();
+    for (const c of comImagem) {
+      const buf = await this.storage.get(c.imagemPath!);
+      dados.set(c.numero, buf);
+      const hash = createHash('sha256').update(buf).digest('hex');
+      const lista = porHash.get(hash) ?? [];
+      lista.push({ numero: c.numero, hash });
+      porHash.set(hash, lista);
+    }
+    const repetidas = new Map<number, number[]>();
+    for (const lista of porHash.values()) {
+      if (lista.length < 2) continue;
+      for (const item of lista) {
+        repetidas.set(
+          item.numero,
+          lista.filter((l) => l.numero !== item.numero).map((l) => l.numero),
+        );
+      }
+    }
+
+    // 2) Conferência visual, em lotes pequenos para não estourar a fila da IA.
+    const alertas = new Map<number, string>();
+    for (const c of comImagem) {
+      const buf = dados.get(c.numero)!;
+      const mime = EXT_PARA_MIME[extDaChave(c.imagemPath!)] ?? 'image/png';
+      const resultado = await this.ai.generateJsonWithImages(
+        promptVerificacaoImagem({
+          numero: c.numero,
+          textoNarrado: c.textoNarrado,
+          descricaoVisual: c.descricaoVisual,
+          estiloVisual: project.estiloVisual,
+        }),
+        verificacaoImagemGenSchema,
+        [{ data: buf, mime }],
+      );
+      const partes: string[] = [];
+      if (repetidas.has(c.numero)) {
+        partes.push(`Imagem idêntica à(s) cena(s) ${repetidas.get(c.numero)!.join(', ')}.`);
+      }
+      if (!resultado.corresponde || resultado.tipo !== 'ok') {
+        partes.push(
+          `[${resultado.tipo}] ${resultado.motivo}${resultado.sugestao ? ` Sugestão: ${resultado.sugestao}` : ''}`,
+        );
+      }
+      if (partes.length) alertas.set(c.numero, partes.join(' ').slice(0, 1000));
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.scene.updateMany({ where: { projectId }, data: { alertaImagem: '' } }),
+      ...[...alertas.entries()].map(([numero, alerta]) =>
+        this.prisma.scene.updateMany({ where: { projectId, numero }, data: { alertaImagem: alerta } }),
+      ),
+    ]);
   }
 
   /**
@@ -146,7 +232,7 @@ export class ImagesService implements OnModuleInit {
     }
     await this.prisma.scene.update({
       where: { id: scene.id },
-      data: { imagemPath: chave, statusImagem: 'gerado', versaoMidia: { increment: 1 } },
+      data: { imagemPath: chave, statusImagem: 'gerado', versaoMidia: { increment: 1 }, alertaImagem: '' },
     });
   }
 

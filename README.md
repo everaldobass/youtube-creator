@@ -1,4 +1,4 @@
-# Criador de Vídeos YouTube
+# YouStudio — Criador de Vídeos YouTube
 
 App web fullstack (MVP): do título ao vídeo pronto para o YouTube, em 9 etapas.
 
@@ -11,7 +11,7 @@ App web fullstack (MVP): do título ao vídeo pronto para o YouTube, em 9 etapas
 ## Requisitos
 - Node 20+ e pnpm 9+ (`sudo npm install -g pnpm@9`)
 - **FFmpeg 5+** (montagem do vídeo, movimento de câmera, mixagem da música, legendas queimadas e recorte das thumbnails): `sudo apt install ffmpeg`
-- **Fonte Noto Sans Bold** para as legendas (já vem com o pacote de fontes do Ubuntu): `sudo apt install fonts-noto-core`
+- **Fonte Noto Sans** (normal, negrito e itálico) para as legendas (já vem com o pacote de fontes do Ubuntu): `sudo apt install fonts-noto-core`
 - Chave da Gemini API e nomes dos modelos (ver abaixo)
 
 ## Rodar
@@ -52,17 +52,17 @@ A Fish Audio é um TTS: o texto do roteiro é lido literalmente. O app usa as ma
 no fim das frases (a opção **Narração mais humana** fica ligada por padrão na etapa 4).
 
 ## As 9 etapas
-1. **Definições:** idioma (**Português do Brasil** ou **English**), formato (longo ou Shorts), tema, público, duração e voz, com salvamento automático.
+1. **Definições:** idioma (**Português do Brasil** ou **English**), formato (longo ou Shorts), tema com contexto de 3 a 4 linhas, público, duração (até 30 minutos) e voz, com salvamento automático. O botão **Salvar e gerar títulos** já cria as 10 alternativas ao abrir a etapa 2.
 2. **Títulos:** 10 alternativas com nota; editar e escolher.
-3. **Roteiro:** cenas com texto, duração e descrição visual; editar, reordenar, apagar, adicionar e refazer cena.
-4. **Narração:** voz fixa em todas as cenas, opção **Narração mais humana** (pausas e respiro), amostra de voz, player por cena e refazer individual.
-5. **Imagens:** guia de estilo único, uma imagem por cena, copiar prompt (Google Flow), **exportar todos os prompts em um .md** e enviar imagem própria. Cada prompt traz a narração da cena e regras de fidelidade: as pessoas/povos citados aparecem como protagonistas, nunca uma paisagem vazia.
+3. **Roteiro:** cenas com texto, duração, descrição visual, sugestão de movimento de câmera, **revisão editorial** (classificação, apontamentos com trecho/problema/explicação/sugestão/fonte e aceitar/rejeitar individual) e **referências** retornadas pelo roteiro. Editar, reordenar, apagar, adicionar e refazer cena, com **download do roteiro em Markdown** (`.md`) para revisar ou gravar fora do app.
+4. **Narração:** voz fixa em todas as cenas, **velocidade de 85% a 110%**, **dicionário de pronúncia**, opção **Narração mais humana**, amostra de voz, player por cena, refazer individual, **versões para comparar**, **aprovação por cena** e ajuste da duração planejada ao áudio real.
+5. **Imagens:** guia de estilo único, uma imagem por cena, copiar prompt (Google Flow), **exportar todos os prompts em um .md**, enviar imagem própria, **verificar correspondência entre narração e imagem** e **mapas/linhas do tempo** gerados por IA. Cada prompt traz a narração da cena e regras de fidelidade: as pessoas/povos citados aparecem como protagonistas, nunca uma paisagem vazia.
 6. **Tags:** 15 a 25 tags, limite de 500 caracteres, edição manual.
-7. **Thumbnails:** 2 variações 1280×720 com até 4 palavras; escolher, editar texto, refazer e baixar.
+7. **Thumbnails:** 2 variações 1280×720 com até 10 palavras; escolher, editar texto, refazer e baixar.
 8. **Descrição:** gancho, resumo, capítulos com os tempos reais das cenas, chamada para se inscrever e hashtags.
-9. **Vídeo:** prévia no navegador com o movimento escolhido, legendas sincronizadas, música de fundo (upload ou biblioteca local), MP4 (H.264 + AAC) montado no servidor e pacote ZIP (imagens, áudios, música, .srt, tempos).
+9. **Vídeo:** prévia no navegador com o movimento escolhido, legendas sincronizadas (posição, fonte, cor e verificação de legibilidade), música de fundo (upload ou biblioteca local), **análise de áudio e prévia da mixagem**, **checklist de revisão final**, MP4 (H.264 + AAC) montado no servidor e pacote ZIP (imagens, áudios, música, .srt, tempos, elementos visuais).
 
-Gerações longas (narração, imagens, thumbnails, vídeo) rodam em uma fila no servidor, com no máximo 2 ao mesmo tempo, progresso na tela e "Tentar de novo" em caso de erro. Dá para fechar a aba durante a geração.
+Gerações longas (narração, thumbnails e vídeo) rodam em uma fila no servidor, com no máximo 2 ao mesmo tempo, progresso na tela e "Tentar de novo" em caso de erro. Dá para fechar a aba durante a geração. As imagens das cenas são enviadas manualmente na etapa 5.
 
 ## Idioma do vídeo
 
@@ -84,6 +84,64 @@ Na etapa 4, a opção **Narração mais humana** (ligada por padrão) deixa a le
 - Diminui a velocidade para 97% (`prosody.speed`), sem mudar a voz.
 - Vale para as próximas narrações e para a amostra de voz; use **Refazer todas** para ouvir as cenas
   antigas com a nova configuração. O ajuste fica salvo no projeto.
+
+O card também permite ajustar a **velocidade** (85% a 110%) e preencher o **dicionário de pronúncia**
+(uma regra por linha, `como está = como se fala`). O ajuste entra apenas no texto enviado ao TTS —
+siglas, nomes próprios e números — e o roteiro continua intacto. Cada nova geração guarda uma
+**versão** do áudio: use **Versões** no card da cena para ouvir as anteriores e escolher qual fica.
+A cena pode ser **aprovada individualmente**; ao continuar, a etapa aprova todas as que já têm áudio
+atualizado.
+
+> A velocidade e a pronúncia dependem dos parâmetros aceitos pelo modelo de TTS configurado. As
+> marcações `[calm]`/`[break]` são específicas do modelo S2 da Fish Audio; em outro modelo, a opção
+> **Narração mais humana** continua enviando a velocidade, mas as marcações podem ser lidas ou ignoradas.
+
+## Revisão editorial e referências
+
+Na etapa 3, o card **Revisão editorial** roda uma análise do roteiro inteiro e devolve uma
+classificação: **Aprovado**, **Aprovado com ressalvas** ou **Necessita de correção**. Para cada
+problema, são apresentados:
+
+- trecho original;
+- tipo (precisão histórica, geográfica, científica, fonte, contradição, generalização ou contexto);
+- problema, explicação e sugestão de correção;
+- fonte indicada e grau de confiança (**alta**, **média**, **baixa** ou **NÃO VERIFICADA**).
+
+A IA é instruída a não inventar fontes nem tratar informação incerta como fato. Quando o modelo não
+consegue verificar, o apontamento aparece como **NÃO VERIFICADA**. Você **aceita ou rejeita cada
+sugestão individualmente**: ao aceitar, o trecho é substituído na cena e a narração/imagem ficam
+marcadas como desatualizadas; ao rejeitar, o texto não muda. Enquanto houver apontamentos pendentes,
+a etapa fica bloqueada — o botão **Continuar sem concluir a revisão** libera a etapa com confirmação,
+mantendo os apontamentos registrados.
+
+As **referências** retornadas pelo roteiro ficam listadas abaixo do card. Elas são o que o modelo
+declarou ter consultado: o app não acessa nem valida o conteúdo desses links, então confirme cada
+fonte antes de publicar. A revisão depende do modelo de texto configurado em `GEMINI_MODEL_TEXT`.
+
+## Verificação imagem × narração
+
+Na etapa 5, o botão **Verificar correspondência** envia a imagem de cada cena e o texto narrado ao
+modelo de visão (Gemini) e registra um alerta no card quando a imagem não representa o conteúdo — por
+exemplo, um mapa atual usado para falar de uma divisão territorial antiga, ou uma espécie diferente da
+citada. Imagens **idênticas** (mesmo arquivo, detectado por SHA-256) também aparecem no checklist
+final. O alerta é apagado quando a imagem da cena é trocada.
+
+> A verificação usa `GEMINI_MODEL_TEXT` com entrada de imagem. Se o modelo configurado não aceitar
+> imagens ou a cota estiver esgotada, o job falha com a mensagem da API e o alerta anterior é mantido.
+
+## Mapas e linhas do tempo
+
+Ainda na etapa 5, o card **Mapas e linhas do tempo** cria elementos visuais explicativos:
+
+- escolha do tipo (**mapa histórico** ou **linha do tempo**), cena (opcional), título, período e
+  descrição do que deve aparecer;
+- geração da imagem pelo modelo de imagem do Gemini, com o período e o estilo visual do projeto no
+  prompt (para não usar mapas atuais em contextos históricos diferentes);
+- editar a descrição, copiar o prompt para gerar manualmente, refazer, enviar uma imagem própria ou
+  remover.
+
+Na montagem do MP4, o elemento da cena aparece como inserção no canto inferior direito, ocupando 62%
+da largura. O ZIP inclui a pasta `elementos-visuais/`.
 
 ## Prompts das imagens (.md)
 
@@ -119,11 +177,19 @@ projeto e vale para a próxima montagem.
 Na etapa 9, o card **Legendas sincronizadas** liga e desliga a legenda queimada no MP4 (o padrão é
 ligada; a escolha fica salva no projeto):
 
-- Texto da narração em **negrito** (Noto Sans Bold), dentro de uma **caixa escura semitransparente**
-  atrás do texto, e **cada palavra destacada em lilás** no momento em que é falada (karaokê do libass).
-- **Tamanho da fonte ajustável** de 60% a 160% (100% é o recomendado), com prévia na hora; a escolha
-  fica salva no projeto e vale para a próxima montagem.
-- A prévia do player no navegador imita o resultado; o MP4 usa os mesmos tempos.
+- Texto da narração no **traço escolhido** (Normal, Negrito ou Itálico, com Noto Sans como fonte padrão),
+  dentro de uma **caixa escura semitransparente** atrás do texto, e **cada palavra destacada** na cor
+  escolhida no momento em que é falada (karaokê do libass).
+- **Tamanho da fonte ajustável** de 60% a 160% (100% é o recomendado), com prévia na hora.
+- **Posição** na parte de baixo (padrão), no meio ou no topo, **família da fonte** e **cor do destaque**;
+  a prévia do player acompanha essas escolhas.
+- **Verificação de legibilidade**: uma análise com as mesmas regras da queima aponta palavras maiores
+  que a linha (risco de corte) e cenas com muitos blocos ou blocos rápidos demais.
+- As escolhas ficam salvas no projeto e valem para a próxima montagem.
+
+> A fonte precisa estar instalada no servidor. O padrão é **Noto Sans** (`fonts-noto-core` no Ubuntu);
+> se o nome não existir, o libass substitui pela fonte padrão e a prévia do navegador pode não
+> corresponder exatamente ao MP4.
 
 Como o TTS devolve só o WAV (sem marcação de palavras), o tempo de cada palavra é estimado pelas
 sílabas e pelas pausas de pontuação. O FFmpeg roda `silencedetect` em cada áudio e encaixa as trocas de
@@ -153,10 +219,31 @@ no início/fim e é mixada com a narração. O MP4 final fica com H.264 + AAC e 
 > `storage/musicas` ou envie pelo card. Algumas faixas exigem atribuição: confira a licença de cada uma e
 > cole o crédito no campo de créditos.
 
+## Análise de áudio e revisão final
+
+Na etapa 9, o card **Revisão final e áudio** reúne as verificações feitas sobre os arquivos reais do
+projeto (depende do FFmpeg instalado):
+
+- **Lista de verificação** com 17 itens: roteiro aprovado, informações verificadas, afirmações sem
+  fonte, imagens presentes e correspondentes, imagens repetidas, narração completa, legendas
+  sincronizadas e legíveis, música equilibrada, cenas sem áudio, duração, resolução, formato 16:9,
+  exportação e qualidade de áudio. Cada item aparece como **OK**, **Alerta**, **Erro** ou **Pendente**.
+  Apenas narração ou imagem faltando impedem a exportação; os demais problemas geram alerta.
+- **Análise de áudio** mede, por cena e no conjunto, o loudness integrado (LUFS), o true peak, o maior
+  silêncio contínuo, a diferença de volume entre cenas e o equilíbrio com a música (considerando volume
+  e ducking do projeto).
+- **Prévia da mixagem**: junta a narração e a música com os ajustes do projeto nos primeiros 60
+  segundos, para conferir o equilíbrio antes de montar o MP4.
+
+As referências iniciais são **-16 LUFS ±2**, true peak **até -1 dBTP**, silêncio contínuo **até 2,5 s**,
+diferença entre cenas **até 4 LU** e música **pelo menos 6 dB abaixo da voz**. São referências
+ajustáveis em `AUDIO_REFERENCIA` (`packages/shared/src/index.ts`), não regras rígidas — o app mede e
+alerta, sem alterar o áudio automaticamente.
+
 ## Estrutura
 ```
 apps/web        Next.js: telas das 9 etapas
-apps/api        NestJS: projetos, títulos, roteiro, narração, imagens, tags, thumbnails, descrição, música, exportação, fila de jobs
+apps/api        NestJS: projetos, títulos, roteiro, editorial, narração, imagens, elementos visuais, tags, thumbnails, descrição, música, qualidade, exportação, fila de jobs
 packages/shared tipos e schemas Zod usados pelos dois lados
 storage/        arquivos gerados (imagens, áudios, thumbnails, vídeo)
 storage/musicas músicas livres para a biblioteca local (opcional, com musicas.json)
@@ -172,9 +259,14 @@ storage/musicas músicas livres para a biblioteca local (opcional, com musicas.j
 - Sem login: usuário único local.
 - Mudar título ou roteiro não marca tags, thumbnails e descrição como desatualizadas (narração e imagens são marcadas).
 - Mudar o efeito de câmera, as legendas ou a música não avisa que o MP4 está desatualizado; basta montar de novo.
-- O MP4 é montado em um único processo no servidor, sem exportar em partes; vídeos de 20 minutos levam alguns minutos e usam bastante memória.
+- O MP4 é montado em um único processo no servidor, sem exportar em partes; vídeos de 30 minutos levam alguns minutos e usam bastante memória.
 - A biblioteca de músicas lê uma pasta local: ao migrar para o Supabase, as faixas precisam ser enviadas pelo card (o upload próprio já usa o storage).
 - A Biblioteca de Áudio do YouTube não tem API pública; o download da faixa é manual.
 - Uma única voz (configurada por `FISH_VOICE_ID`), sem seletor.
 - Modelos de imagem às vezes erram o texto escrito na thumbnail; use Refazer ou edite o texto.
+- A revisão editorial, a verificação de imagens e a geração de mapas dependem das cotas e da
+  disponibilidade dos modelos do Gemini; erros de cota/limite aparecem no card e podem ser tentados de novo.
+- A revisão editorial verifica o texto com o conhecimento do modelo e as fontes que ele declara: não é
+  uma auditoria bibliográfica automática. Confirme as referências antes de publicar.
+- A prévia da mixagem cobre os primeiros 60 segundos; a montagem final aplica os mesmos ajustes no vídeo inteiro.
 - Teste A/B real de CTR e publicação direta no YouTube ficam para uma fase seguinte.

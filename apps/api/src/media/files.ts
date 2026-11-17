@@ -1,5 +1,6 @@
 /** Chaves de arquivo no storage, sempre por projeto. */
-export const chaveAudio = (projectId: string, sceneId: string) => `projects/${projectId}/audio/${sceneId}.wav`;
+export const chaveAudio = (projectId: string, sceneId: string, stamp: number = Date.now()) =>
+  `projects/${projectId}/audio/${sceneId}-${stamp}.wav`;
 export const chaveImagem = (projectId: string, sceneId: string, ext: string) =>
   `projects/${projectId}/images/${sceneId}.${ext}`;
 export const chaveThumb = (projectId: string, thumbId: string) =>

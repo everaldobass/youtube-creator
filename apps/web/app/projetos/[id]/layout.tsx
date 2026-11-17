@@ -15,9 +15,9 @@ export default async function ProjectLayout({
   const project = await api.getProject(id);
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
       <ProjectNav projectId={project.id} etapaAtual={project.etapaAtual} />
-      <main className="flex-1 p-6 md:p-10">{children}</main>
+      <main className="min-w-0 flex-1 p-6 md:p-10">{children}</main>
     </div>
   );
 }

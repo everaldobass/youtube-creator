@@ -1,14 +1,16 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Job, Scene } from '@prisma/client';
-import { Idioma, NarrationResponse } from '@yt/shared';
+import { AudioVersaoDto, Idioma, NarrationResponse } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
 import { JobsService } from '../jobs/jobs.service';
 import { chaveAudio } from '../media/files';
-import { textoParaNarracao } from '../media/narracao';
+import { textoFalado, textoParaNarracao } from '../media/narracao';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { toSceneDto } from '../scenes/scenes.service';
 import { STORAGE_DRIVER, StorageDriver } from '../storage/storage.service';
+
+const MAX_VERSOES = 5;
 
 const FRASES_DE_TESTE: Record<Idioma, string> = {
   'pt-BR':
@@ -37,6 +39,8 @@ export class NarrationService implements OnModuleInit {
       vozNome: project.vozNome,
       vozInstrucaoTom: project.vozInstrucaoTom,
       narracaoNatural: project.narracaoNatural,
+      narracaoVelocidade: project.narracaoVelocidade,
+      pronuncia: project.pronuncia,
       scenes: rows.map(toSceneDto),
       jobs: await this.jobs.listar(projectId, ['narracao']),
     };
@@ -71,7 +75,7 @@ export class NarrationService implements OnModuleInit {
     return scene;
   }
 
-  /** Executado pela fila. */
+  /** Executado pela fila. Guarda a versão anterior para comparação. */
   private async gerarCena(sceneId: string): Promise<void> {
     const scene = await this.prisma.scene.findUnique({ where: { id: sceneId } });
     if (!scene) return; // cena apagada enquanto estava na fila
@@ -79,22 +83,94 @@ export class NarrationService implements OnModuleInit {
     const texto = scene.textoNarrado.trim();
     if (!texto) throw new Error(`A cena ${scene.numero} não tem texto narrado.`);
 
+    const preparado = project.narracaoNatural
+      ? textoParaNarracao(textoFalado(texto), project.pronuncia)
+      : textoFalado(texto);
     const audio = await this.ai.generateSpeech(
-      project.narracaoNatural ? textoParaNarracao(texto) : texto,
+      preparado,
       project.narracaoNatural,
       project.idioma,
+      project.narracaoVelocidade,
     );
     const chave = chaveAudio(scene.projectId, scene.id);
     await this.storage.put(chave, audio.wav, 'audio/wav');
+    await this.prisma.$transaction([
+      this.prisma.sceneAudio.updateMany({ where: { sceneId }, data: { atual: false } }),
+      this.prisma.sceneAudio.create({
+        data: { sceneId, path: chave, duracaoMs: audio.duracaoMs, atual: true },
+      }),
+      this.prisma.scene.update({
+        where: { id: sceneId },
+        data: {
+          audioPath: chave,
+          audioDuracaoMs: audio.duracaoMs,
+          statusNarracao: 'gerado',
+          versaoMidia: { increment: 1 },
+        },
+      }),
+    ]);
+    await this.limparVersoesAntigas(sceneId);
+  }
+
+  /** Mantém as últimas MAX_VERSOES e apaga os arquivos das mais antigas. */
+  private async limparVersoesAntigas(sceneId: string): Promise<void> {
+    const versoes = await this.prisma.sceneAudio.findMany({
+      where: { sceneId },
+      orderBy: { criadoEm: 'desc' },
+    });
+    const descartar = versoes.slice(MAX_VERSOES);
+    if (!descartar.length) return;
+    for (const v of descartar) await this.storage.remove(v.path).catch(() => undefined);
+    await this.prisma.sceneAudio.deleteMany({ where: { id: { in: descartar.map((v) => v.id) } } });
+  }
+
+  /** Versões guardadas da cena (a mais recente primeiro). */
+  async versoes(sceneId: string): Promise<AudioVersaoDto[]> {
+    await this.getScene(sceneId);
+    const rows = await this.prisma.sceneAudio.findMany({
+      where: { sceneId },
+      orderBy: { criadoEm: 'desc' },
+    });
+    return rows.map((v) => ({
+      id: v.id,
+      duracaoMs: v.duracaoMs,
+      atual: v.atual,
+      criadoEm: v.criadoEm.toISOString(),
+    }));
+  }
+
+  /** Volta uma versão anterior para a cena (sem gerar de novo). */
+  async usarVersao(sceneId: string, versaoId: string): Promise<NarrationResponse> {
+    const scene = await this.getScene(sceneId);
+    const versao = await this.prisma.sceneAudio.findFirst({ where: { id: versaoId, sceneId } });
+    if (!versao) throw new NotFoundException('Versão de áudio não encontrada.');
+    await this.prisma.$transaction([
+      this.prisma.sceneAudio.updateMany({ where: { sceneId }, data: { atual: false } }),
+      this.prisma.sceneAudio.update({ where: { id: versaoId }, data: { atual: true } }),
+      this.prisma.scene.update({
+        where: { id: sceneId },
+        data: {
+          audioPath: versao.path,
+          audioDuracaoMs: versao.duracaoMs,
+          statusNarracao: 'gerado',
+          versaoMidia: { increment: 1 },
+        },
+      }),
+    ]);
+    return this.response(scene.projectId);
+  }
+
+  /** Aprovação individual da cena (a etapa aceita aprovar todas de uma vez). */
+  async aprovarCena(sceneId: string): Promise<NarrationResponse> {
+    const scene = await this.getScene(sceneId);
+    if (!scene.audioPath || scene.statusNarracao === 'desatualizado' || scene.statusNarracao === 'pendente') {
+      throw new BadRequestException(`A cena ${scene.numero} ainda não tem narração atualizada.`);
+    }
     await this.prisma.scene.update({
       where: { id: sceneId },
-      data: {
-        audioPath: chave,
-        audioDuracaoMs: audio.duracaoMs,
-        statusNarracao: 'gerado',
-        versaoMidia: { increment: 1 },
-      },
+      data: { statusNarracao: 'aprovado' },
     });
+    return this.response(scene.projectId);
   }
 
   async audio(sceneId: string): Promise<Buffer> {
@@ -103,14 +179,23 @@ export class NarrationService implements OnModuleInit {
     return this.storage.get(scene.audioPath);
   }
 
+  /** Áudio de uma versão específica, para comparar antes de escolher. */
+  async audioDaVersao(sceneId: string, versaoId: string): Promise<Buffer> {
+    await this.getScene(sceneId);
+    const versao = await this.prisma.sceneAudio.findFirst({ where: { id: versaoId, sceneId } });
+    if (!versao) throw new NotFoundException('Versão de áudio não encontrada.');
+    return this.storage.get(versao.path);
+  }
+
   /** Amostra curta com a voz do projeto, sem gravar nada. */
   async sample(projectId: string): Promise<Buffer> {
     const project = await this.projects.get(projectId);
     const frase = FRASES_DE_TESTE[project.idioma] ?? FRASES_DE_TESTE['pt-BR'];
     const audio = await this.ai.generateSpeech(
-      project.narracaoNatural ? textoParaNarracao(frase) : frase,
+      project.narracaoNatural ? textoParaNarracao(frase, project.pronuncia) : frase,
       project.narracaoNatural,
       project.idioma,
+      project.narracaoVelocidade,
     );
     return audio.wav;
   }

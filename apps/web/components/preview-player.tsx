@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, RotateCcw, SkipBack, SkipForward } from 'lucide-react';
-import type { EfeitoCamera, SceneDto } from '@yt/shared';
+import type { EfeitoCamera, LegendaEstilo, LegendaPosicao, SceneDto } from '@yt/shared';
 import { Button } from '@/components/ui/button';
 import { API_URL } from '@/lib/client-api';
 import { classeDaCena } from '@/lib/camera';
@@ -16,12 +16,20 @@ export function PreviewPlayer({
   efeitoCamera = 'nenhum',
   legendas = false,
   escala = 100,
+  posicao = 'baixo',
+  estilo = 'negrito',
+  cor = '#C4B5FD',
+  fonte = 'Noto Sans',
 }: {
   scenes: SceneDto[];
   vertical: boolean;
   efeitoCamera?: EfeitoCamera;
   legendas?: boolean;
   escala?: number;
+  posicao?: LegendaPosicao;
+  estilo?: LegendaEstilo;
+  cor?: string;
+  fonte?: string;
 }) {
   const [i, setI] = useState(0);
   const [tocando, setTocando] = useState(false);
@@ -75,17 +83,28 @@ export function PreviewPlayer({
           <div
             className={cn(
               'pointer-events-none absolute inset-x-0 flex justify-center px-4',
-              vertical ? 'bottom-[6%]' : 'bottom-[4.5%]',
+              posicao === 'topo'
+                ? 'top-[5%]'
+                : posicao === 'meio'
+                  ? 'top-1/2 -translate-y-1/2'
+                  : vertical
+                    ? 'bottom-[6%]'
+                    : 'bottom-[4.5%]',
             )}
           >
             <p
               className={cn('legenda-caixa legenda-previa text-center leading-snug text-white', vertical && 'max-w-full')}
-              style={{ fontSize: `${(vertical ? 15 : 18) * escala / 100}px` }}
+              style={{
+                fontSize: `${(vertical ? 15 : 18) * escala / 100}px`,
+                fontFamily: fonte,
+                fontWeight: estilo === 'negrito' ? 700 : 400,
+                fontStyle: estilo === 'italico' ? 'italic' : 'normal',
+              }}
             >
               {palavras.map((palavra, indice) => (
                 <span
                   key={`${palavra.texto}-${indice}`}
-                  className={indice < faladas ? 'text-[#c6a6ff]' : undefined}
+                  style={indice < faladas ? { color: cor } : undefined}
                 >
                   {palavra.texto}
                   {indice < palavras.length - 1 ? ' ' : ''}

@@ -24,15 +24,38 @@ export const IDIOMAS = ['pt-BR', 'en'] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
 export const IDIOMA_INFO: Record<Idioma, { rotulo: string; curto: string; exemplo: string }> = {
-  'pt-BR': { rotulo: 'Português (Brasil)', curto: 'PT', exemplo: 'Ex.: como funciona o sistema solar' },
+  'pt-BR': {
+    rotulo: 'Português (Brasil)',
+    curto: 'PT',
+    exemplo: 'Ex.: como funciona o sistema solar',
+  },
   en: { rotulo: 'English', curto: 'EN', exemplo: 'Ex.: how the solar system works' },
 };
 
 /** Limites por formato (documento original, seção 1). */
 export const LIMITES_FORMATO = {
-  longo: { maxMinutos: 20, cena: [10, 25], resolucao: '1920x1080', proporcao: '16:9' },
+  longo: { maxMinutos: 30, cena: [10, 25], resolucao: '1920x1080', proporcao: '16:9' },
   shorts: { maxMinutos: 3, cena: [3, 8], resolucao: '1080x1920', proporcao: '9:16' },
 } as const;
+
+/** Posição vertical da legenda queimada no vídeo. */
+export const LEGENDA_POSICOES = ['baixo', 'meio', 'topo'] as const;
+export type LegendaPosicao = (typeof LEGENDA_POSICOES)[number];
+
+/** Estilo do texto da legenda queimada (o ASS aceita negrito e itálico separados). */
+export const LEGENDA_ESTILOS = ['normal', 'negrito', 'italico'] as const;
+export type LegendaEstilo = (typeof LEGENDA_ESTILOS)[number];
+
+export const ROTULO_ESTILO: Record<LegendaEstilo, string> = {
+  normal: 'Normal',
+  negrito: 'Negrito',
+  italico: 'Itálico',
+};
+
+/** Velocidade do TTS em % — referência de documentário, ágil o bastante sem atropelar. */
+export const NARRACAO_VELOCIDADE_MIN = 85;
+export const NARRACAO_VELOCIDADE_MAX = 110;
+
 
 /**
  * Efeitos de câmera ("Ken Burns") aplicados às imagens na montagem do vídeo.
@@ -62,13 +85,37 @@ export const EFEITOS_CAMERA: OpcaoEfeitoCamera[] = [
   { slug: 'nenhum', label: 'Imagem parada', descricao: 'Sem movimento, como é hoje.' },
   { slug: 'zoom-in', label: 'Zoom de aproximação', descricao: 'A câmera se aproxima devagar.' },
   { slug: 'zoom-out', label: 'Zoom de afastamento', descricao: 'Começa perto e recua devagar.' },
-  { slug: 'panoramica-esquerda', label: 'Panorâmica à esquerda', descricao: 'A câmera desliza da direita para a esquerda.' },
-  { slug: 'panoramica-direita', label: 'Panorâmica à direita', descricao: 'A câmera desliza da esquerda para a direita.' },
-  { slug: 'panoramica-cima', label: 'Panorâmica para cima', descricao: 'A câmera sobe pela imagem.' },
-  { slug: 'panoramica-baixo', label: 'Panorâmica para baixo', descricao: 'A câmera desce pela imagem.' },
+  {
+    slug: 'panoramica-esquerda',
+    label: 'Panorâmica à esquerda',
+    descricao: 'A câmera desliza da direita para a esquerda.',
+  },
+  {
+    slug: 'panoramica-direita',
+    label: 'Panorâmica à direita',
+    descricao: 'A câmera desliza da esquerda para a direita.',
+  },
+  {
+    slug: 'panoramica-cima',
+    label: 'Panorâmica para cima',
+    descricao: 'A câmera sobe pela imagem.',
+  },
+  {
+    slug: 'panoramica-baixo',
+    label: 'Panorâmica para baixo',
+    descricao: 'A câmera desce pela imagem.',
+  },
   { slug: 'rotacao', label: 'Rotação suave', descricao: 'A imagem gira levemente para os lados.' },
-  { slug: 'tridimensional', label: 'Deslocamento 3D', descricao: 'Zoom, deslocamento e rotação juntos, com sensação de profundidade.' },
-  { slug: 'alternado', label: 'Alternado (recomendado)', descricao: 'Troca o movimento a cada cena para o vídeo não ficar repetitivo.' },
+  {
+    slug: 'tridimensional',
+    label: 'Deslocamento 3D',
+    descricao: 'Zoom, deslocamento e rotação juntos, com sensação de profundidade.',
+  },
+  {
+    slug: 'alternado',
+    label: 'Alternado (recomendado)',
+    descricao: 'Troca o movimento a cada cena para o vídeo não ficar repetitivo.',
+  },
 ];
 
 /** Sequência usada pelo modo "alternado", uma opção por cena. */
@@ -90,16 +137,31 @@ export function efeitoDaCena(efeito: EfeitoCamera, numero: number): EfeitoCamera
 
 export const createProjectSchema = z.object({
   ideia: z.string().max(200).default(''),
-  tema: z.string().max(200).default(''),
+  tema: z.string().max(1000).default(''),
   publico: z.string().max(200).default(''),
   formato: z.enum(FORMATOS).default('longo'),
-  duracaoMinutos: z.number().int().min(1).max(20).default(5),
+  duracaoMinutos: z.number().int().min(1).max(30).default(30),
   idioma: z.enum(IDIOMAS).default('pt-BR'),
   vozNome: z.string().max(60).default('voz-masculina-1'),
   narracaoNatural: z.boolean().default(true),
+  narracaoVelocidade: z
+    .number()
+    .int()
+    .min(NARRACAO_VELOCIDADE_MIN)
+    .max(NARRACAO_VELOCIDADE_MAX)
+    .default(97),
+  pronuncia: z.string().max(2000).default(''),
   efeitoCamera: z.enum(EFEITO_CAMERA_SLUGS).default('alternado'),
+  usarCameraSugerida: z.boolean().default(false),
   legendasAtivas: z.boolean().default(true),
   legendaTamanho: z.number().int().min(60).max(160).default(100),
+  legendaPosicao: z.enum(LEGENDA_POSICOES).default('baixo'),
+  legendaEstilo: z.enum(LEGENDA_ESTILOS).default('negrito'),
+  legendaFonte: z.string().trim().max(60).default('Noto Sans'),
+  legendaCor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Use uma cor hexadecimal, como #C4B5FD')
+    .default('#C4B5FD'),
 });
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
@@ -109,6 +171,8 @@ export const updateProjectSchema = createProjectSchema
     vozInstrucaoTom: z.string().max(300),
     estiloVisual: z.string().max(600),
     descricao: z.string().max(5000),
+    fontesRoteiro: z.string().max(20000),
+    editorialStatus: z.enum(['nao_revisado', 'aprovado', 'ressalvas', 'correcao']),
   })
   .partial();
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -125,11 +189,21 @@ export interface ProjectDto {
   vozNome: string;
   vozInstrucaoTom: string;
   narracaoNatural: boolean;
+  narracaoVelocidade: number;
+  pronuncia: string;
   estiloVisual: string;
   descricao: string;
   efeitoCamera: EfeitoCamera;
+  usarCameraSugerida: boolean;
   legendasAtivas: boolean;
   legendaTamanho: number;
+  legendaPosicao: LegendaPosicao;
+  legendaEstilo: LegendaEstilo;
+  legendaFonte: string;
+  legendaCor: string;
+  editorialStatus: 'nao_revisado' | 'aprovado' | 'ressalvas' | 'correcao';
+  fontesRoteiro: string;
+  revisaoFinalEm: string | null;
   etapaAtual: StepSlug;
   createdAt: string;
   updatedAt: string;
@@ -159,15 +233,33 @@ export const sceneGenSchema = z
       textoNarrado: z.string().min(1),
       duracaoSegundos: z.coerce.number(),
       descricaoVisual: z.string().min(1),
+      movimentoCamera: z.string().optional().default(''),
     }),
   )
   .min(1);
+
+/** Fonte bibliográfica citada pelo roteiro. */
+export const fonteSchema = z.object({
+  titulo: z.string().min(1),
+  autor: z.string().optional().default(''),
+  ano: z.union([z.string(), z.number()]).optional().default(''),
+  url: z.string().optional().default(''),
+});
+export type FonteRoteiro = z.infer<typeof fonteSchema>;
+
+/** Saída do gerador de roteiro: cenas + referências consultadas. */
+export const roteiroGenSchema = z.object({
+  cenas: sceneGenSchema,
+  fontes: z.array(fonteSchema).optional().default([]),
+});
+export type RoteiroGerado = z.infer<typeof roteiroGenSchema>;
 
 /** Saída esperada do modelo ao refazer uma única cena. */
 export const singleSceneGenSchema = z.object({
   textoNarrado: z.string().min(1),
   duracaoSegundos: z.coerce.number(),
   descricaoVisual: z.string().min(1),
+  movimentoCamera: z.string().optional().default(''),
 });
 
 export const updateTitleSchema = z.object({ texto: z.string().trim().min(1).max(100) });
@@ -177,6 +269,8 @@ export const updateSceneSchema = z.object({
   textoNarrado: z.string().max(2000).optional(),
   duracaoSegundos: z.number().int().min(1).max(120).optional(),
   descricaoVisual: z.string().max(1000).optional(),
+  sugestaoCamera: z.string().max(40).optional(),
+  alertaImagem: z.string().max(1000).optional(),
 });
 export type UpdateSceneInput = z.infer<typeof updateSceneSchema>;
 
@@ -211,6 +305,8 @@ export interface SceneDto {
   temAudio: boolean;
   temImagem: boolean;
   versaoMidia: number;
+  sugestaoCamera: string;
+  alertaImagem: string;
 }
 
 export interface RoteiroResumo {
@@ -227,6 +323,14 @@ export interface RoteiroResumo {
 export interface ScenesResponse {
   scenes: SceneDto[];
   resumo: RoteiroResumo;
+  /** Referências consultadas pelo roteiro (JSON já interpretado). */
+  fontes: FonteRoteiro[];
+  /** Revisão editorial mais recente, se houver. */
+  editorial: {
+    classificacao: ClassificacaoEditorial | null;
+    pendentes: number;
+    revisadoEm: string | null;
+  };
 }
 
 /** Calcula o resumo do roteiro; usado na API e na tela para mostrar o mesmo número. */
@@ -261,9 +365,17 @@ export function proximaEtapa(etapa: StepSlug): StepSlug {
 // ---------------------------------------------------------------------------
 
 export const MAX_CARACTERES_TAGS = 500;
-export const MAX_PALAVRAS_THUMB = 4;
+/** Texto curto da thumbnail: até 10 palavras, como no padrão de CTR do YouTube. */
+export const MAX_PALAVRAS_THUMB = 10;
 
-export type JobTipo = 'narracao' | 'imagem' | 'thumbnail' | 'render';
+export type JobTipo =
+  | 'narracao'
+  | 'imagem'
+  | 'thumbnail'
+  | 'render'
+  | 'editorial'
+  | 'verificacao'
+  | 'visual';
 export type JobStatus = 'fila' | 'executando' | 'concluido' | 'erro';
 
 export interface JobDto {
@@ -278,8 +390,18 @@ export interface NarrationResponse {
   vozNome: string;
   vozInstrucaoTom: string;
   narracaoNatural: boolean;
+  narracaoVelocidade: number;
+  pronuncia: string;
   scenes: SceneDto[];
   jobs: JobDto[];
+}
+
+/** Versão de áudio de uma cena, guardada para comparação antes de aprovar. */
+export interface AudioVersaoDto {
+  id: string;
+  duracaoMs: number;
+  atual: boolean;
+  criadoEm: string;
 }
 
 export interface ImagesResponse {
@@ -330,7 +452,13 @@ export interface ExportResponse {
   totalSegundos: number;
   resolucao: string;
   efeitoCamera: EfeitoCamera;
-  musica: { nome: string; artista: string; origem: string; volume: number; ducking: boolean } | null;
+  musica: {
+    nome: string;
+    artista: string;
+    origem: string;
+    volume: number;
+    ducking: boolean;
+  } | null;
   legendasAtivas: boolean;
 }
 
@@ -430,10 +558,12 @@ export const descGenSchema = z.object({
   capitulos: z.array(z.object({ tempo: z.string(), titulo: z.string().min(1) })).min(1),
 });
 
-export const updateTagsSchema = z.object({ tags: z.array(z.string().trim().min(1).max(100)).max(40) });
+export const updateTagsSchema = z.object({
+  tags: z.array(z.string().trim().min(1).max(100)).max(40),
+});
 export type UpdateTagsInput = z.infer<typeof updateTagsSchema>;
 
-export const updateThumbSchema = z.object({ textoNaImagem: z.string().trim().min(1).max(60) });
+export const updateThumbSchema = z.object({ textoNaImagem: z.string().trim().min(1).max(200) });
 export type UpdateThumbInput = z.infer<typeof updateThumbSchema>;
 
 export const updateDescSchema = z.object({ descricao: z.string().max(5000) });
@@ -447,6 +577,204 @@ export const uploadImageSchema = z.object({
   mime: z.enum(['image/png', 'image/jpeg', 'image/webp']),
 });
 export type UploadImageInput = z.infer<typeof uploadImageSchema>;
+
+// ---------------------------------------------------------------------------
+// Revisão editorial
+// ---------------------------------------------------------------------------
+
+export const TIPOS_PROBLEMA_EDITORIAL = [
+  'historico',
+  'geografico',
+  'cientifico',
+  'fonte',
+  'contradicao',
+  'generalizacao',
+  'contexto',
+] as const;
+export type TipoProblemaEditorial = (typeof TIPOS_PROBLEMA_EDITORIAL)[number];
+
+export const CONFIANCAS_EDITORIAL = ['alta', 'media', 'baixa', 'nao_verificada'] as const;
+export type ConfiancaEditorial = (typeof CONFIANCAS_EDITORIAL)[number];
+
+export const CLASSIFICACOES_EDITORIAL = ['aprovado', 'ressalvas', 'correcao'] as const;
+export type ClassificacaoEditorial = (typeof CLASSIFICACOES_EDITORIAL)[number];
+
+export const ROTULO_CLASSIFICACAO: Record<ClassificacaoEditorial, string> = {
+  aprovado: 'Aprovado',
+  ressalvas: 'Aprovado com ressalvas',
+  correcao: 'Necessita de correção',
+};
+
+export const ROTULO_CONFIANCA: Record<ConfiancaEditorial, string> = {
+  alta: 'Confiança alta',
+  media: 'Confiança média',
+  baixa: 'Confiança baixa',
+  nao_verificada: 'NÃO VERIFICADA',
+};
+
+export const ROTULO_TIPO_PROBLEMA: Record<TipoProblemaEditorial, string> = {
+  historico: 'Precisão histórica',
+  geografico: 'Precisão geográfica',
+  cientifico: 'Precisão científica',
+  fonte: 'Afirmação sem fonte',
+  contradicao: 'Possível contradição',
+  generalizacao: 'Generalização excessiva',
+  contexto: 'Falta de contextualização',
+};
+
+/** Saída esperada do modelo na revisão editorial. */
+export const editorialGenSchema = z.object({
+  classificacao: z.enum(CLASSIFICACOES_EDITORIAL),
+  resumo: z.string().default(''),
+  problemas: z
+    .array(
+      z.object({
+        cenaNumero: z.coerce.number().int().min(1).nullable().optional(),
+        tipo: z.enum(TIPOS_PROBLEMA_EDITORIAL),
+        trecho: z.string().default(''),
+        problema: z.string().min(1),
+        explicacao: z.string().default(''),
+        sugestao: z.string().default(''),
+        fonte: z.string().default(''),
+        confianca: z.enum(CONFIANCAS_EDITORIAL).default('media'),
+      }),
+    )
+    .default([]),
+});
+export type EditorialGen = z.infer<typeof editorialGenSchema>;
+
+export interface EditorialIssueDto {
+  id: string;
+  cenaNumero: number | null;
+  tipo: TipoProblemaEditorial;
+  trecho: string;
+  problema: string;
+  explicacao: string;
+  sugestao: string;
+  fonte: string;
+  confianca: ConfiancaEditorial;
+  status: 'pendente' | 'aceita' | 'rejeitada';
+}
+
+export interface EditorialResponse {
+  revisao: { classificacao: ClassificacaoEditorial; resumo: string; criadoEm: string } | null;
+  issues: EditorialIssueDto[];
+  pendentes: number;
+  jobs: JobDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Elementos visuais explicativos (mapas históricos e linhas do tempo)
+// ---------------------------------------------------------------------------
+
+export const TIPOS_VISUAL = ['mapa', 'linha-do-tempo'] as const;
+export type TipoVisual = (typeof TIPOS_VISUAL)[number];
+
+export const ROTULO_VISUAL: Record<TipoVisual, string> = {
+  mapa: 'Mapa histórico',
+  'linha-do-tempo': 'Linha do tempo',
+};
+
+export interface VisualAssetDto {
+  id: string;
+  sceneNumero: number | null;
+  tipo: TipoVisual;
+  titulo: string;
+  periodo: string;
+  descricao: string;
+  prompt: string;
+  temImagem: boolean;
+  /** Muda a cada imagem nova; evita cache no navegador. */
+  versao: string;
+}
+
+export interface VisualAssetsResponse {
+  assets: VisualAssetDto[];
+  jobs: JobDto[];
+}
+
+export const createVisualAssetSchema = z.object({
+  tipo: z.enum(TIPOS_VISUAL).default('mapa'),
+  sceneNumero: z.number().int().min(1).nullable().optional(),
+  titulo: z.string().trim().max(200).default(''),
+  periodo: z.string().trim().max(200).default(''),
+  descricao: z.string().trim().max(1500).default(''),
+});
+export type CreateVisualAssetInput = z.infer<typeof createVisualAssetSchema>;
+
+export const updateVisualAssetSchema = z.object({
+  titulo: z.string().trim().max(200).optional(),
+  periodo: z.string().trim().max(200).optional(),
+  descricao: z.string().trim().max(1500).optional(),
+  sceneNumero: z.number().int().min(1).nullable().optional(),
+});
+export type UpdateVisualAssetInput = z.infer<typeof updateVisualAssetSchema>;
+
+// ---------------------------------------------------------------------------
+// Análise de qualidade (áudio e revisão final)
+// ---------------------------------------------------------------------------
+
+/** Referências ajustáveis de loudness para conteúdo estéreo no YouTube. */
+export const AUDIO_REFERENCIA = {
+  lufsAlvo: -16,
+  lufsTolerancia: 2,
+  truePeakMax: -1,
+  /** Silêncio contínuo acima disso vira alerta. */
+  silencioMaxMs: 2500,
+  /** Diferença de loudness entre cenas que vira alerta. */
+  diferencaMaxLu: 4,
+} as const;
+
+export interface AudioCenaAnalise {
+  numero: number;
+  duracaoMs: number;
+  lufs: number | null;
+  truePeakDb: number | null;
+  silencioMaxMs: number;
+  problemas: string[];
+}
+
+export interface AudioAnalise {
+  cenas: AudioCenaAnalise[];
+  /** Loudness do conjunto (concatenação da narração). */
+  geral: { lufs: number | null; truePeakDb: number | null } | null;
+  musica: { lufs: number | null; truePeakDb: number | null } | null;
+  /** Estimativa da mixagem final, quando há música. */
+  mixagem: { vozesLufs: number | null; musicaLufs: number | null; diferencaDb: number | null } | null;
+  problemas: string[];
+}
+
+/** Avisos de legibilidade calculados com as mesmas regras usadas na queima das legendas. */
+export interface LegendasAnalise {
+  cenas: { numero: number; blocos: number; avisos: string[] }[];
+  /** Opções efetivas usadas na renderização (para conferência na interface). */
+  opcoes: {
+    maxCaracteres: number;
+    porLinha: number;
+    fonte: number;
+    fonteNome: string;
+    posicao: LegendaPosicao;
+    estilo: LegendaEstilo;
+  };
+  avisos: string[];
+}
+
+export type ChecklistStatus = 'ok' | 'alerta' | 'erro' | 'pendente';
+
+export interface ChecklistItem {
+  id: string;
+  rotulo: string;
+  status: ChecklistStatus;
+  detalhe: string;
+}
+
+export interface RevisaoFinalResponse {
+  itens: ChecklistItem[];
+  resumo: { ok: number; alertas: number; erros: number; pendentes: number };
+  geradoEm: string;
+  /** Falhas que impedem a exportação (técnicas), se houver. */
+  bloqueios: string[];
+}
 
 // ----- helpers compartilhados -----
 

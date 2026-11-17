@@ -32,8 +32,30 @@ export class NarrationController {
     return this.narration.generateScene(sceneId);
   }
 
+  @Post('scenes/:sceneId/narration/approve')
+  approveScene(@Param('sceneId') sceneId: string) {
+    return this.narration.aprovarCena(sceneId);
+  }
+
   @Get('scenes/:sceneId/audio')
   async audio(@Param('sceneId') sceneId: string) {
     return new StreamableFile(await this.narration.audio(sceneId), { type: 'audio/wav' });
+  }
+
+  @Get('scenes/:sceneId/audio/versions')
+  versions(@Param('sceneId') sceneId: string) {
+    return this.narration.versoes(sceneId);
+  }
+
+  @Get('scenes/:sceneId/audio/versions/:versaoId')
+  async audioVersion(@Param('sceneId') sceneId: string, @Param('versaoId') versaoId: string) {
+    return new StreamableFile(await this.narration.audioDaVersao(sceneId, versaoId), {
+      type: 'audio/wav',
+    });
+  }
+
+  @Post('scenes/:sceneId/audio/versions/:versaoId/use')
+  useVersion(@Param('sceneId') sceneId: string, @Param('versaoId') versaoId: string) {
+    return this.narration.usarVersao(sceneId, versaoId);
   }
 }

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Copy, Film, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, Copy, Film, Plus, Trash2 } from 'lucide-react';
 import { STEPS, IDIOMA_INFO, type ProjectDto } from '@yt/shared';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -36,19 +36,32 @@ export default async function HomePage() {
   const { projects, error } = await loadProjects();
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-semibold tracking-tight">Seus vídeos</h1>
-          <p className="mt-2 text-muted-foreground">
-            Cada projeto leva você do título ao vídeo pronto, em 9 etapas.
-          </p>
+    <main className="mx-auto max-w-6xl px-6 pb-16 pt-10">
+      <section className="rounded-xl border border-border bg-panel px-6 py-8 sm:px-10">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="max-w-[52ch]">
+            <h1 className="text-[2.5rem] font-semibold leading-[1.05] tracking-[-0.03em]">
+              Seus vídeos
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Defina o assunto, aprove o roteiro e saia com MP4, thumbnail e textos prontos para
+              colar no YouTube Studio.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Nove etapas, do tema ao MP4. Vídeos longos de até 30 min e Shorts de até 3 min.
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {projects.length} {projects.length === 1 ? 'projeto' : 'projetos'}
+            </p>
+            <NovoVideoButton />
+          </div>
         </div>
-        {projects.length > 0 && <NovoVideoButton />}
-      </header>
+      </section>
 
       {error && (
-        <Card className="border-primary/50">
+        <Card className="mt-8 border-primary/50">
           <CardContent>
             <p className="font-medium">Não foi possível carregar os projetos.</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -62,12 +75,12 @@ export default async function HomePage() {
       )}
 
       {!error && projects.length === 0 && (
-        <Card className="mx-auto max-w-xl text-center">
+        <Card className="mx-auto mt-8 max-w-xl text-center">
           <CardContent className="flex flex-col items-center gap-4 py-14">
             <Film className="size-10 text-muted-foreground" />
             <h2 className="text-xl font-semibold">Crie seu primeiro vídeo</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Informe tema, público e duração. O app sugere títulos, escreve o roteiro por cena e
+              Informe tema, contexto e duração. O app sugere títulos, escreve o roteiro por cena e
               prepara narração, imagens, tags, thumbnails e descrição.
             </p>
             <NovoVideoButton />
@@ -76,7 +89,7 @@ export default async function HomePage() {
       )}
 
       {projects.length > 0 && (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => {
             const prog = progresso(p.etapaAtual);
             return (
@@ -86,39 +99,56 @@ export default async function HomePage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge>{p.formato === 'shorts' ? 'Shorts' : 'Vídeo longo'}</Badge>
                       <Badge variant="outline">{IDIOMA_INFO[p.idioma].curto}</Badge>
-                      <span className="ml-auto text-xs text-muted-foreground">
+                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
                         {new Date(p.updatedAt).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
                     <Link href={`/projetos/${p.id}/${p.etapaAtual}`} className="flex-1">
-                      <h2 className="text-lg font-semibold leading-snug hover:text-primary">
+                      <h2 className="text-lg font-semibold leading-snug">
                         {p.tituloEscolhido || p.ideia || p.tema || 'Vídeo sem título'}
                       </h2>
                     </Link>
                     <div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-panel">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-background">
                         <div
                           className="h-full rounded-full bg-primary"
                           style={{ width: `${(prog.atual / prog.total) * 100}%` }}
                         />
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
+                      <p className="mt-2 text-xs tabular-nums text-muted-foreground">
                         Etapa {prog.atual} de {prog.total}: {prog.label}
                       </p>
                     </div>
-                    <div className="flex gap-2 border-t pt-3">
-                      <form action={duplicateProject}>
-                        <input type="hidden" name="id" value={p.id} />
-                        <Button variant="ghost" size="sm" type="submit">
-                          <Copy className="size-4" /> Duplicar
-                        </Button>
-                      </form>
-                      <form action={deleteProject}>
-                        <input type="hidden" name="id" value={p.id} />
-                        <Button variant="ghost" size="sm" type="submit">
-                          <Trash2 className="size-4" /> Apagar
-                        </Button>
-                      </form>
+                    <div className="flex items-center justify-between gap-2 border-t pt-3">
+                      <div className="flex gap-1">
+                        <form action={duplicateProject}>
+                          <input type="hidden" name="id" value={p.id} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="submit"
+                            className="text-muted-foreground hover:text-ai"
+                          >
+                            <Copy className="size-4" /> Duplicar
+                          </Button>
+                        </form>
+                        <form action={deleteProject}>
+                          <input type="hidden" name="id" value={p.id} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="submit"
+                            className="text-muted-foreground hover:text-primary"
+                          >
+                            <Trash2 className="size-4" /> Apagar
+                          </Button>
+                        </form>
+                      </div>
+                      <Button size="sm" asChild>
+                        <Link href={`/projetos/${p.id}/${p.etapaAtual}`}>
+                          Continuar <ArrowRight className="size-4" />
+                        </Link>
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

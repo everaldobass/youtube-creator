@@ -26,6 +26,7 @@ export const api = {
 
 import type {
   DescriptionResponse,
+  EditorialResponse,
   ExportResponse,
   ImagesResponse,
   MusicResponse,
@@ -34,13 +35,16 @@ import type {
   TagsResponse,
   ThumbnailsResponse,
   TitleDto,
+  VisualAssetsResponse,
 } from '@yt/shared';
 
 export const apiServer = {
   listTitles: (id: string) => request<TitleDto[]>(`/projects/${id}/titles`),
   listScenes: (id: string) => request<ScenesResponse>(`/projects/${id}/scenes`),
+  editorial: (id: string) => request<EditorialResponse>(`/projects/${id}/editorial`),
   narration: (id: string) => request<NarrationResponse>(`/projects/${id}/narration`),
   images: (id: string) => request<ImagesResponse>(`/projects/${id}/images`),
+  visual: (id: string) => request<VisualAssetsResponse>(`/projects/${id}/visual`),
   tags: (id: string) => request<TagsResponse>(`/projects/${id}/tags`),
   thumbnails: (id: string) => request<ThumbnailsResponse>(`/projects/${id}/thumbnails`),
   description: (id: string) => request<DescriptionResponse>(`/projects/${id}/description`),

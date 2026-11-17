@@ -1,14 +1,19 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Scene } from '@prisma/client';
 import {
+  FonteRoteiro,
+  IDIOMA_INFO,
+  LIMITES_FORMATO,
   ProjectDto,
+  ROTULO_CLASSIFICACAO,
   RoteiroResumo,
   SceneDto,
   ScenesResponse,
   StatusItem,
   UpdateSceneInput,
   calcularResumoRoteiro,
-  sceneGenSchema,
+  formatarTempo,
+  roteiroGenSchema,
   singleSceneGenSchema,
 } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
@@ -29,7 +34,69 @@ export const toSceneDto = (s: Scene): SceneDto => ({
   temAudio: Boolean(s.audioPath),
   temImagem: Boolean(s.imagemPath),
   versaoMidia: s.versaoMidia,
+  sugestaoCamera: s.sugestaoCamera,
+  alertaImagem: s.alertaImagem,
 });
+
+/** Movimentos aceitos como sugestão por cena (o resto vira string vazia). */
+const CAMERAS = new Set([
+  'zoom-in',
+  'zoom-out',
+  'panoramica-esquerda',
+  'panoramica-direita',
+  'panoramica-cima',
+  'panoramica-baixo',
+  'nenhum',
+]);
+
+const cameraValida = (valor: string | undefined) => {
+  const v = (valor ?? '').trim();
+  return CAMERAS.has(v) ? v : '';
+};
+
+/** Rótulo curto do status de um item do roteiro, para leitura fora do app. */
+function rotuloStatus(status: StatusItem): string {
+  switch (status) {
+    case 'aprovado':
+      return 'aprovada';
+    case 'gerado':
+      return 'gerada, aguardando aprovação';
+    case 'desatualizado':
+      return 'desatualizada';
+    default:
+      return 'pendente';
+  }
+}
+
+/** Nome de arquivo sem acentos, espaços ou caracteres reservados. */
+function arquivoSeguro(texto: string): string {
+  const limpo = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return limpo || 'roteiro';
+}
+
+/** Fontes do roteiro ficam em JSON no projeto; leitura tolerante a dados antigos. */
+export function fontesDoProjeto(project: ProjectDto): FonteRoteiro[] {
+  if (!project.fontesRoteiro.trim()) return [];
+  try {
+    const dados = JSON.parse(project.fontesRoteiro);
+    if (!Array.isArray(dados)) return [];
+    return dados
+      .filter((f) => f && typeof f.titulo === 'string' && f.titulo.trim())
+      .map((f) => ({
+        titulo: String(f.titulo),
+        autor: String(f.autor ?? ''),
+        ano: String(f.ano ?? ''),
+        url: String(f.url ?? ''),
+      }));
+  } catch {
+    return [];
+  }
+}
 
 /** Narração ou imagem já geradas ficam "desatualizadas" quando o texto muda. */
 const desatualizar = (status: string): string =>
@@ -65,11 +132,111 @@ export class ScenesService {
       orderBy: { numero: 'asc' },
     });
     const scenes = rows.map(toSceneDto);
-    return { scenes, resumo: this.resumo(project, scenes) };
+    const [review, pendentes] = await Promise.all([
+      this.prisma.editorialReview.findFirst({
+        where: { projectId: project.id },
+        orderBy: { criadoEm: 'desc' },
+      }),
+      this.prisma.editorialIssue.count({ where: { projectId: project.id, status: 'pendente' } }),
+    ]);
+    return {
+      scenes,
+      resumo: this.resumo(project, scenes),
+      fontes: fontesDoProjeto(project),
+      editorial: {
+        classificacao: (review?.classificacao as ScenesResponse['editorial']['classificacao']) ?? null,
+        pendentes,
+        revisadoEm: review?.criadoEm.toISOString() ?? null,
+      },
+    };
   }
 
   async list(projectId: string): Promise<ScenesResponse> {
     return this.resposta(await this.projects.get(projectId));
+  }
+
+  /**
+   * Roteiro em Markdown para revisar fora do app (ou colar num editor).
+   * Usa exatamente o texto salvo, sem reescrever nada.
+   */
+  async roteiroMarkdown(projectId: string): Promise<{ nome: string; markdown: string }> {
+    const project = await this.projects.get(projectId);
+    const { scenes, resumo, fontes, editorial } = await this.resposta(project);
+    const titulo = project.tituloEscolhido || project.tema || project.ideia || 'Roteiro sem título';
+    const formato = `${project.formato === 'shorts' ? 'Shorts' : 'Vídeo longo'} (${LIMITES_FORMATO[project.formato].proporcao})`;
+    const narracao = scenes.length
+      ? `${formatarTempo(resumo.totalSegundos)} em ${scenes.length} cena${scenes.length === 1 ? '' : 's'}`
+      : 'sem cenas';
+    const revisao = editorial.classificacao
+      ? `${ROTULO_CLASSIFICACAO[editorial.classificacao]}${editorial.pendentes ? `, com ${editorial.pendentes} apontamento${editorial.pendentes === 1 ? '' : 's'} pendente${editorial.pendentes === 1 ? '' : 's'}` : ''}`
+      : 'não revisado';
+
+    const linhas: string[] = [
+      `# ${titulo}`,
+      '',
+      '| | |',
+      '| --- | --- |',
+      `| Formato | ${formato} |`,
+      `| Idioma | ${IDIOMA_INFO[project.idioma].rotulo} |`,
+      `| Narração | ${narracao} |`,
+      `| Duração alvo | ${formatarTempo(resumo.alvoSegundos)} |`,
+      `| Revisão editorial | ${revisao} |`,
+      '',
+    ];
+
+    if (!scenes.length) {
+      linhas.push('_Nenhuma cena no roteiro. Gere o roteiro na etapa 3 do YouStudio._', '');
+    }
+
+    scenes.forEach((s, i) => {
+      const destaque = i === 0 ? ' (gancho)' : i === scenes.length - 1 && scenes.length > 1 ? ' (chamada para ação)' : '';
+      linhas.push(
+        `## Cena ${s.numero}${destaque}`,
+        '',
+        `- Duração: ${s.duracaoSegundos} s${s.audioDuracaoMs ? ` (áudio de ${(s.audioDuracaoMs / 1000).toFixed(1).replace('.', ',')} s)` : ''}`,
+        `- Narração: ${rotuloStatus(s.statusNarracao)}`,
+        `- Imagem: ${rotuloStatus(s.statusImagem)}`,
+        '',
+        '**Texto narrado**',
+        '',
+        ...s.textoNarrado
+          .trim()
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .flatMap((p) => [p, '']),
+        '**Descrição visual**',
+        '',
+        ...s.descricaoVisual
+          .trim()
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .flatMap((p) => [p, '']),
+        '---',
+        '',
+      );
+    });
+
+    linhas.push('## Referências', '');
+    if (fontes.length) {
+      fontes.forEach((f, i) => {
+        const autor = f.autor ? ` — ${f.autor}` : '';
+        const ano = f.ano ? ` (${f.ano})` : '';
+        const url = f.url ? ` — <${f.url}>` : '';
+        linhas.push(`${i + 1}. **${f.titulo}**${autor}${ano}${url}`, '');
+      });
+      linhas.push(
+        '> Referências informadas pelo modelo de linguagem. Confirme cada uma antes de publicar; o YouStudio não acessa o conteúdo delas.',
+        '',
+      );
+    } else if (scenes.length) {
+      linhas.push('_Nenhuma referência registrada com este roteiro._', '');
+    }
+
+    linhas.push(`_Exportado do YouStudio em ${new Date().toLocaleDateString('pt-BR')}._`, '');
+
+    return { nome: `${arquivoSeguro(titulo)}.md`, markdown: linhas.join('\n') };
   }
 
   /** Dois passos (negativo e depois positivo) para não violar o índice único (projectId, numero). */
@@ -106,7 +273,7 @@ export class ScenesService {
         publico: project.publico,
         idioma: project.idioma,
       }),
-      sceneGenSchema,
+      roteiroGenSchema,
     );
 
     const antigas = await this.prisma.scene.findMany({
@@ -115,6 +282,7 @@ export class ScenesService {
     });
     await this.limparArquivos(antigas);
     const idsAntigos = antigas.map((s) => s.id);
+    const fontes = (gerado.fontes ?? []).filter((f) => f.titulo.trim()).slice(0, 12);
     await this.prisma.$transaction([
       // Jobs presos às cenas antigas deixariam erros órfãos na tela.
       this.prisma.job.deleteMany({
@@ -122,16 +290,25 @@ export class ScenesService {
       }),
       this.prisma.scene.deleteMany({ where: { projectId } }),
       this.prisma.scene.createMany({
-        data: gerado.map((c, i) => ({
+        data: gerado.cenas.map((c, i) => ({
           projectId,
           numero: i + 1,
           textoNarrado: c.textoNarrado.trim(),
           duracaoSegundos: limitarDuracao(c.duracaoSegundos),
           descricaoVisual: c.descricaoVisual.trim(),
+          sugestaoCamera: cameraValida(c.movimentoCamera),
         })),
       }),
+      // Um roteiro novo invalida a revisão editorial anterior.
+      this.prisma.editorialIssue.deleteMany({ where: { projectId } }),
+      this.prisma.editorialReview.deleteMany({ where: { projectId } }),
+      this.prisma.visualAsset.updateMany({ where: { projectId }, data: { sceneNumero: null } }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: { fontesRoteiro: JSON.stringify(fontes), editorialStatus: 'nao_revisado' },
+      }),
     ]);
-    return this.resposta(project);
+    return this.resposta(await this.projects.get(projectId));
   }
 
   async add(projectId: string, depoisDaCena?: number): Promise<ScenesResponse> {
@@ -177,10 +354,15 @@ export class ScenesService {
     if (input.textoNarrado !== undefined && input.textoNarrado !== scene.textoNarrado) {
       data.textoNarrado = input.textoNarrado;
       data.statusNarracao = desatualizar(scene.statusNarracao);
-    }
-    if (input.descricaoVisual !== undefined && input.descricaoVisual !== scene.descricaoVisual) {
+    }    if (input.descricaoVisual !== undefined && input.descricaoVisual !== scene.descricaoVisual) {
       data.descricaoVisual = input.descricaoVisual;
       data.statusImagem = desatualizar(scene.statusImagem);
+    }
+    if (input.sugestaoCamera !== undefined && input.sugestaoCamera !== scene.sugestaoCamera) {
+      data.sugestaoCamera = cameraValida(input.sugestaoCamera);
+    }
+    if (input.alertaImagem !== undefined && input.alertaImagem !== scene.alertaImagem) {
+      data.alertaImagem = input.alertaImagem;
     }
     if (input.duracaoSegundos !== undefined && input.duracaoSegundos !== scene.duracaoSegundos) {
       data.duracaoSegundos = input.duracaoSegundos;
@@ -189,6 +371,16 @@ export class ScenesService {
     const atualizada = Object.keys(data).length
       ? await this.prisma.scene.update({ where: { id: sceneId }, data })
       : scene;
+    if (input.textoNarrado !== undefined && input.textoNarrado !== scene.textoNarrado) {
+      // Texto novo: a revisão editorial e o alerta de imagem se referem ao texto antigo.
+      await this.prisma.$transaction([
+        this.prisma.project.update({
+          where: { id: project.id },
+          data: { editorialStatus: 'nao_revisado' },
+        }),
+        this.prisma.scene.update({ where: { id: sceneId }, data: { alertaImagem: '' } }),
+      ]);
+    }
     const todas = await this.prisma.scene.findMany({
       where: { projectId: project.id },
       orderBy: { numero: 'asc' },
@@ -242,6 +434,7 @@ export class ScenesService {
         textoNarrado: nova.textoNarrado.trim(),
         duracaoSegundos: limitarDuracao(nova.duracaoSegundos),
         descricaoVisual: nova.descricaoVisual.trim(),
+        sugestaoCamera: cameraValida(nova.movimentoCamera) || scene.sugestaoCamera,
         statusNarracao: desatualizar(scene.statusNarracao),
         statusImagem: desatualizar(scene.statusImagem),
       },
