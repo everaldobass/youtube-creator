@@ -17,6 +17,8 @@ export default async function TitulosPage({
     <TitulosView
       projectId={id}
       initialTitles={titles}
+      ideia={project.ideia}
+      tituloEscolhido={project.tituloEscolhido}
       temEntrada={Boolean(project.tema.trim() || project.ideia.trim())}
       autoGerar={gerar === '1'}
     />

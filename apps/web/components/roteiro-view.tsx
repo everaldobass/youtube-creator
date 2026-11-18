@@ -1,13 +1,15 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
   BookOpen,
   Check,
+  Copy,
   FileDown,
+  FileText,
   Loader2,
   Plus,
   RefreshCw,
@@ -15,6 +17,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -26,6 +29,7 @@ import {
   type EditorialResponse,
   type Formato,
   type FonteRoteiro,
+  type ImportRoteiroResponse,
   type RoteiroResumo,
   type SceneDto,
   type ScenesResponse,
@@ -143,7 +147,11 @@ function EditorialPanel({
             </Badge>
           )}
           <Button size="sm" variant="ai" onClick={revisar} disabled={ocupado}>
-            {ocupado ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {ocupado ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
             {ocupado ? 'Revisando...' : revisao ? 'Revisar de novo' : 'Revisar roteiro'}
           </Button>
         </div>
@@ -162,9 +170,12 @@ function EditorialPanel({
       )}
 
       {ocupado && (
-        <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
-          <Loader2 className="size-4 animate-spin" />
-          A revisão roda no servidor e pode levar alguns minutos.
+        <p
+          className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"
+          aria-live="polite"
+        >
+          <Loader2 className="size-4 animate-spin" />A revisão roda no servidor e pode levar alguns
+          minutos.
         </p>
       )}
 
@@ -172,9 +183,7 @@ function EditorialPanel({
         <div className="mt-3 space-y-3">
           {revisao.resumo && <p className="text-sm">{revisao.resumo}</p>}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>
-              Revisado em {new Date(revisao.criadoEm).toLocaleString('pt-BR')}
-            </span>
+            <span>Revisado em {new Date(revisao.criadoEm).toLocaleString('pt-BR')}</span>
             <span>
               {decididos} de {editorial.issues.length} apontamentos decididos
             </span>
@@ -208,7 +217,9 @@ function EditorialPanel({
                       <Badge variant={i.confianca === 'nao_verificada' ? 'warning' : 'default'}>
                         {ROTULO_CONFIANCA[i.confianca]}
                       </Badge>
-                      {i.cenaNumero && <span className="text-muted-foreground">Cena {i.cenaNumero}</span>}
+                      {i.cenaNumero && (
+                        <span className="text-muted-foreground">Cena {i.cenaNumero}</span>
+                      )}
                       {resolvido && (
                         <Badge variant={i.status === 'aceita' ? 'success' : 'default'}>
                           {i.status === 'aceita' ? 'Aceita' : 'Rejeitada'}
@@ -231,7 +242,9 @@ function EditorialPanel({
                       </p>
                     )}
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {i.fonte ? `Fonte indicada: ${i.fonte}` : 'Nenhuma fonte indicada para este ponto.'}
+                      {i.fonte
+                        ? `Fonte indicada: ${i.fonte}`
+                        : 'Nenhuma fonte indicada para este ponto.'}
                     </p>
                     {!resolvido && (
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -339,10 +352,15 @@ export function RoteiroView({
   const [resumo, setResumo] = useState<RoteiroResumo>(initial.resumo);
   const [fontes, setFontes] = useState<FonteRoteiro[]>(initial.fontes);
   const [editorial, setEditorial] = useState<EditorialResponse>(initialEditorial);
+  const [roteiroManual, setRoteiroManual] = useState(initial.roteiroManual);
   const [ignorarEditorial, setIgnorarEditorial] = useState(false);
-  const [ocupado, setOcupado] = useState<string | null>(null); // 'gerar' | id da cena | 'estrutura'
+  const [ocupado, setOcupado] = useState<string | null>(null); // 'gerar' | 'importar' | id da cena | 'estrutura'
   const [erro, setErro] = useState<string | null>(null);
   const [continuando, setContinuando] = useState(false);
+  const [importado, setImportado] = useState<ImportRoteiroResponse['importado'] | null>(null);
+  const [prompt, setPrompt] = useState<{ nome: string; markdown: string } | null>(null);
+  const [copiadoPrompt, setCopiadoPrompt] = useState(false);
+  const arquivoRef = useRef<HTMLInputElement>(null);
 
   const [min, max] = LIMITES_FORMATO[formato].cena;
 
@@ -350,6 +368,7 @@ export function RoteiroView({
     setScenes(r.scenes);
     setResumo(r.resumo);
     setFontes(r.fontes);
+    setRoteiroManual(r.roteiroManual);
   }
 
   const recarregarRoteiro = useCallback(async () => {
@@ -375,10 +394,80 @@ export function RoteiroView({
         const r = await post<ScenesResponse>(`/projects/${projectId}/script/generate`);
         setEditorial(await apiFetch<EditorialResponse>(`/projects/${projectId}/editorial`));
         setIgnorarEditorial(false);
+        setImportado(null);
         return r;
       },
       aplicar,
     );
+
+  /** Prompt para o usuário gerar o roteiro numa IA externa e importar de volta. */
+  async function abrirPrompt() {
+    if (prompt) {
+      setPrompt(null);
+      return;
+    }
+    setOcupado('prompt');
+    setErro(null);
+    try {
+      setPrompt(
+        await apiFetch<{ nome: string; markdown: string }>(`/projects/${projectId}/script/prompt`),
+      );
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível montar o prompt');
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function copiarPrompt() {
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt.markdown);
+      setCopiadoPrompt(true);
+      setTimeout(() => setCopiadoPrompt(false), 2000);
+    } catch {
+      setErro('Não foi possível copiar. Selecione o texto e copie manualmente.');
+    }
+  }
+
+  function baixarPrompt() {
+    if (!prompt) return;
+    const url = URL.createObjectURL(new Blob([prompt.markdown], { type: 'text/markdown' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = prompt.nome;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Lê o .md escolhido, envia para a API e substitui as cenas atuais. */
+  async function importar(arquivo: File) {
+    if (
+      scenes.length > 0 &&
+      !window.confirm(
+        `Importar "${arquivo.name}" substitui as ${scenes.length} cenas atuais — os áudios e as imagens delas serão descartados. Continuar?`,
+      )
+    ) {
+      return;
+    }
+    setOcupado('importar');
+    setErro(null);
+    setImportado(null);
+    try {
+      const markdown = await arquivo.text();
+      const r = await post<ImportRoteiroResponse>(`/projects/${projectId}/script/import`, {
+        markdown,
+      });
+      aplicar(r);
+      setIgnorarEditorial(false);
+      setImportado(r.importado);
+      setEditorial(await apiFetch<EditorialResponse>(`/projects/${projectId}/editorial`));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível importar o roteiro');
+    } finally {
+      setOcupado(null);
+    }
+  }
 
   function editarLocal(id: string, campos: Partial<SceneDto>) {
     setScenes((ss) => ss.map((s) => (s.id === id ? { ...s, ...campos } : s)));
@@ -447,7 +536,7 @@ export function RoteiroView({
   const semRevisao = !editorial.revisao;
   const pendenciasEditoriais = editorial.pendentes;
   const bloqueioEditorial =
-    !ignorarEditorial && (semRevisao || pendenciasEditoriais > 0)
+    !ignorarEditorial && !roteiroManual && (semRevisao || pendenciasEditoriais > 0)
       ? semRevisao
         ? 'Rode a revisão editorial para liberar a etapa'
         : `Decida os ${pendenciasEditoriais} apontamentos editoriais para liberar a etapa`
@@ -469,6 +558,43 @@ export function RoteiroView({
         }
         actions={
           <>
+            <input
+              ref={arquivoRef}
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              className="sr-only"
+              onChange={(e) => {
+                const arquivo = e.target.files?.[0];
+                e.target.value = ''; // permite escolher o mesmo arquivo de novo
+                if (arquivo) void importar(arquivo);
+              }}
+            />
+            <Button
+              variant="outline"
+              onClick={() => arquivoRef.current?.click()}
+              disabled={bloqueado}
+              title="Importar um roteiro em Markdown, no mesmo padrão do arquivo exportado"
+            >
+              {ocupado === 'importar' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Upload className="size-4" />
+              )}
+              {ocupado === 'importar' ? 'Importando...' : 'Importar .md'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={abrirPrompt}
+              disabled={bloqueado}
+              title="Montar um prompt para gerar o roteiro numa IA externa e importar o resultado"
+            >
+              {ocupado === 'prompt' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileText className="size-4" />
+              )}
+              {prompt ? 'Fechar prompt' : 'Prompt IA externa'}
+            </Button>
             {scenes.length > 0 && (
               <Button variant="outline" asChild>
                 <a
@@ -502,6 +628,66 @@ export function RoteiroView({
         </div>
       )}
 
+      {importado && (
+        <div role="status" className="mt-6 rounded-xl border border-success/40 bg-success/10 p-4">
+          <p className="flex items-center gap-2 text-sm font-medium text-success">
+            <Check className="size-4" />
+            {importado.cenas} {importado.cenas === 1 ? 'cena importada' : 'cenas importadas'}
+            {importado.fontes > 0 &&
+              ` e ${importado.fontes} ${importado.fontes === 1 ? 'referência' : 'referências'}`}
+            .
+          </p>
+          {importado.avisos.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+              {importado.avisos.map((aviso, i) => (
+                <li key={i}>{aviso}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Roteiro escrito fora do app: a revisão editorial por IA é opcional — você já pode
+            aprovar e continuar.
+          </p>
+        </div>
+      )}
+
+      {prompt && (
+        <Card className="mt-6 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-medium">
+                <FileText className="size-4" aria-hidden /> Prompt para IA externa
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Copie o texto abaixo e cole numa IA de sua preferência (ChatGPT, Gemini, Claude…).
+                Depois salve a resposta como um arquivo <code>.md</code> e importe aqui em{' '}
+                <strong>Importar .md</strong>.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm" variant="outline" onClick={copiarPrompt}>
+                {copiadoPrompt ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {copiadoPrompt ? 'Copiado' : 'Copiar'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={baixarPrompt}>
+                <FileDown className="size-4" /> Baixar .md
+              </Button>
+            </div>
+          </div>
+          <Textarea
+            readOnly
+            value={prompt.markdown}
+            aria-label="Prompt para gerar o roteiro numa IA externa"
+            className="mt-3 min-h-72 font-mono text-xs"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            O prompt já traz as definições do projeto e o esqueleto de todas as cenas — a IA só
+            precisa preencher o texto narrado e a descrição visual de cada uma.
+          </p>
+        </Card>
+      )}
+
       {scenes.length > 0 && (
         <div className="sticky top-0 z-10 -mx-6 mt-6 border-b bg-background/95 px-6 py-3 backdrop-blur md:-mx-10 md:px-10">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
@@ -511,6 +697,12 @@ export function RoteiroView({
             <span>
               Total <strong>{mmss(resumo.totalSegundos)}</strong> de {mmss(resumo.alvoSegundos)}
             </span>
+            {roteiroManual && (
+              <span className="inline-flex items-center gap-1 text-xs text-ai">
+                <FileText className="size-3.5" aria-hidden />
+                roteiro manual
+              </span>
+            )}
             <span className={resumo.dentroDaMargem ? 'text-success' : 'text-warning'}>
               {resumo.dentroDaMargem
                 ? `Dentro da margem de 10% (${desvioTexto})`
@@ -536,6 +728,13 @@ export function RoteiroView({
             ))}
           </div>
         </div>
+      )}
+
+      {scenes.length > 0 && roteiroManual && (
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          Roteiro importado manualmente — a revisão editorial por IA é opcional. Você pode aprovar e
+          continuar a qualquer momento; as cenas já estão prontas para narração e imagens.
+        </p>
       )}
 
       {scenes.length > 0 && (
@@ -581,7 +780,8 @@ export function RoteiroView({
         <Card className="mt-6 p-8 text-center">
           <p className="font-medium">Nenhuma cena ainda</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            O roteiro sai dividido em cenas, cada uma com texto narrado, duração e descrição visual.
+            Gere o roteiro com IA ou importe um arquivo .md escrito à mão — no mesmo padrão do
+            roteiro exportado, cada cena com “**Texto narrado**” e “**Descrição visual**”.
           </p>
         </Card>
       )}
@@ -734,11 +934,7 @@ export function RoteiroView({
         onContinuar={continuar}
         continuarDisabled={scenes.length === 0 || bloqueado || Boolean(bloqueioEditorial)}
         busy={continuando}
-        dica={
-          scenes.length === 0
-            ? 'Gere o roteiro para continuar'
-            : bloqueioEditorial
-        }
+        dica={scenes.length === 0 ? 'Gere ou importe o roteiro para continuar' : bloqueioEditorial}
       />
     </div>
   );

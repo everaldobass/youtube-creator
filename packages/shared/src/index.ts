@@ -56,7 +56,6 @@ export const ROTULO_ESTILO: Record<LegendaEstilo, string> = {
 export const NARRACAO_VELOCIDADE_MIN = 85;
 export const NARRACAO_VELOCIDADE_MAX = 110;
 
-
 /**
  * Efeitos de câmera ("Ken Burns") aplicados às imagens na montagem do vídeo.
  * `alternado` varia o movimento de cena em cena.
@@ -202,6 +201,8 @@ export interface ProjectDto {
   legendaFonte: string;
   legendaCor: string;
   editorialStatus: 'nao_revisado' | 'aprovado' | 'ressalvas' | 'correcao';
+  /** Roteiro escrito à mão e importado: a revisão editorial por IA é opcional. */
+  roteiroManual: boolean;
   fontesRoteiro: string;
   revisaoFinalEm: string | null;
   etapaAtual: StepSlug;
@@ -331,6 +332,27 @@ export interface ScenesResponse {
     pendentes: number;
     revisadoEm: string | null;
   };
+  /** Roteiro importado de um .md escrito à mão (dispensa a revisão por IA). */
+  roteiroManual: boolean;
+}
+
+/**
+ * Importação de roteiro em Markdown: aceita o mesmo padrão do arquivo
+ * exportado pelo YouStudio (título em `#`, cenas em `## Cena N`,
+ * `**Texto narrado**`, `**Descrição visual**` e `## Referências`).
+ */
+export const importRoteiroSchema = z.object({
+  markdown: z.string().trim().min(10, 'O arquivo está vazio.').max(200_000),
+});
+export type ImportRoteiroInput = z.infer<typeof importRoteiroSchema>;
+
+export interface ImportRoteiroResponse extends ScenesResponse {
+  importado: {
+    cenas: number;
+    fontes: number;
+    /** Ajustes automáticos e trechos ignorados, para mostrar na tela. */
+    avisos: string[];
+  };
 }
 
 /** Calcula o resumo do roteiro; usado na API e na tela para mostrar o mesmo número. */
@@ -369,13 +391,7 @@ export const MAX_CARACTERES_TAGS = 500;
 export const MAX_PALAVRAS_THUMB = 10;
 
 export type JobTipo =
-  | 'narracao'
-  | 'imagem'
-  | 'thumbnail'
-  | 'render'
-  | 'editorial'
-  | 'verificacao'
-  | 'visual';
+  'narracao' | 'imagem' | 'thumbnail' | 'render' | 'editorial' | 'verificacao' | 'visual';
 export type JobStatus = 'fila' | 'executando' | 'concluido' | 'erro';
 
 export interface JobDto {
@@ -740,7 +756,11 @@ export interface AudioAnalise {
   geral: { lufs: number | null; truePeakDb: number | null } | null;
   musica: { lufs: number | null; truePeakDb: number | null } | null;
   /** Estimativa da mixagem final, quando há música. */
-  mixagem: { vozesLufs: number | null; musicaLufs: number | null; diferencaDb: number | null } | null;
+  mixagem: {
+    vozesLufs: number | null;
+    musicaLufs: number | null;
+    diferencaDb: number | null;
+  } | null;
   problemas: string[];
 }
 
@@ -775,6 +795,102 @@ export interface RevisaoFinalResponse {
   /** Falhas que impedem a exportação (técnicas), se houver. */
   bloqueios: string[];
 }
+
+// ----- configurações de IA -----
+
+export const PROVEDORES_IA = ['gemini', 'openai', 'anthropic', 'groq'] as const;
+export type ProvedorIa = (typeof PROVEDORES_IA)[number];
+
+export interface ProvedorIaInfo {
+  id: ProvedorIa;
+  nome: string;
+  /** Variáveis correspondentes no .env (e nas linhas de configuração salvas). */
+  varChave: string;
+  varModeloTexto: string;
+  varModeloImagem?: string;
+  /** Posição na fila de fallback: 0 = chamado primeiro. */
+  ordem: number;
+}
+
+/** Ordem de uso: se o provedor anterior falhar, o próximo assume. */
+export const PROVEDORES_IA_INFO: ProvedorIaInfo[] = [
+  {
+    id: 'gemini',
+    nome: 'Google Gemini',
+    varChave: 'GEMINI_API_KEY',
+    varModeloTexto: 'GEMINI_MODEL_TEXT',
+    varModeloImagem: 'GEMINI_MODEL_IMAGE',
+    ordem: 0,
+  },
+  {
+    id: 'openai',
+    nome: 'OpenAI',
+    varChave: 'OPENAI_API_KEY',
+    varModeloTexto: 'OPENAI_MODEL_TEXT',
+    varModeloImagem: 'OPENAI_MODEL_IMAGE',
+    ordem: 1,
+  },
+  {
+    id: 'anthropic',
+    nome: 'Anthropic',
+    varChave: 'ANTHROPIC_API_KEY',
+    varModeloTexto: 'ANTHROPIC_MODEL_TEXT',
+    ordem: 2,
+  },
+  {
+    id: 'groq',
+    nome: 'Groq',
+    varChave: 'GROQ_API_KEY',
+    varModeloTexto: 'GROQ_MODEL_TEXT',
+    ordem: 3,
+  },
+];
+
+export interface CampoConfigIa {
+  /**
+   * Valor efetivo; string vazia = não configurado.
+   * Para a chave, o backend envia sempre "" — o navegador só recebe o resumo.
+   */
+  valor: string;
+  /** De onde veio: arquivo .env, valor salvo na tela, ou nenhum. */
+  origem: 'env' | 'salvo' | 'nenhuma';
+  /** Só para a chave: resumo para exibir sem revelar o valor ("AIza…xyz4"). */
+  resumo?: string;
+}
+
+export interface ProvedorIaConfigDto {
+  id: ProvedorIa;
+  nome: string;
+  ordem: number;
+  /** True quando há chave + modelo de texto: o provedor entra na fila. */
+  ativo: boolean;
+  campos: {
+    chave: CampoConfigIa;
+    modeloTexto: CampoConfigIa;
+    modeloImagem?: CampoConfigIa;
+  };
+}
+
+export interface AiSettingsDto {
+  provedores: ProvedorIaConfigDto[];
+}
+
+/**
+ * PUT /settings/ai/:provedor — campos ausentes não são alterados.
+ * `limparChave` apaga a chave salva na tela; `restaurarEnv` apaga tudo
+ * (chave e modelos) para voltar ao que está no .env.
+ */
+export const updateProvedorIaSchema = z.object({
+  modeloTexto: z.string().trim().max(120).optional(),
+  modeloImagem: z.string().trim().max(120).optional(),
+  apiKey: z.string().trim().max(400).optional(),
+  limparChave: z.boolean().optional(),
+  restaurarEnv: z.boolean().optional(),
+});
+export type UpdateProvedorIaInput = z.infer<typeof updateProvedorIaSchema>;
+
+export const testarProvedorIaSchema = z.object({ provedor: z.enum(PROVEDORES_IA) });
+export type TestarProvedorIaInput = z.infer<typeof testarProvedorIaSchema>;
 
 // ----- helpers compartilhados -----
 

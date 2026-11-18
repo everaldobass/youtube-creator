@@ -38,6 +38,7 @@ function toDto(p: Project): ProjectDto {
     legendaFonte: p.legendaFonte,
     legendaCor: p.legendaCor,
     editorialStatus: p.editorialStatus as ProjectDto['editorialStatus'],
+    roteiroManual: p.roteiroManual,
     fontesRoteiro: p.fontesRoteiro,
     revisaoFinalEm: p.revisaoFinalEm?.toISOString() ?? null,
     etapaAtual: p.etapaAtual as StepSlug,
@@ -88,7 +89,10 @@ export class ProjectsService {
 
   async update(id: string, input: UpdateProjectInput): Promise<ProjectDto> {
     const project = await this.get(id);
-    this.validarDuracao(input.formato ?? project.formato, input.duracaoMinutos ?? project.duracaoMinutos);
+    this.validarDuracao(
+      input.formato ?? project.formato,
+      input.duracaoMinutos ?? project.duracaoMinutos,
+    );
     const row = await this.prisma.project.update({ where: { id }, data: input });
     return toDto(row);
   }
@@ -130,7 +134,11 @@ export class ProjectsService {
     ]);
 
     // Sem mídia, a cópia para na etapa em que os textos copiados bastam.
-    const limite = scenes.length ? STEP_SLUGS.indexOf('roteiro') : titles.length ? STEP_SLUGS.indexOf('titulos') : 0;
+    const limite = scenes.length
+      ? STEP_SLUGS.indexOf('roteiro')
+      : titles.length
+        ? STEP_SLUGS.indexOf('titulos')
+        : 0;
     const etapaAtual = STEP_SLUGS[Math.min(STEP_SLUGS.indexOf(original.etapaAtual), limite)];
 
     const row = await this.prisma.$transaction(async (tx) => {

@@ -2,9 +2,11 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, StreamableFile } fro
 import { ApiTags } from '@nestjs/swagger';
 import {
   AddSceneInput,
+  ImportRoteiroInput,
   ReorderScenesInput,
   UpdateSceneInput,
   addSceneSchema,
+  importRoteiroSchema,
   reorderScenesSchema,
   updateSceneSchema,
 } from '@yt/shared';
@@ -37,11 +39,23 @@ export class ScenesController {
     });
   }
 
-  @Post('projects/:id/scenes')
-  add(
+  /** Prompt em Markdown para gerar o roteiro numa IA externa e importar de volta. */
+  @Get('projects/:id/script/prompt')
+  prompt(@Param('id') id: string) {
+    return this.scenes.promptExterno(id);
+  }
+
+  /** Importa um roteiro em Markdown escrito fora do app (substitui as cenas). */
+  @Post('projects/:id/script/import')
+  importar(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(addSceneSchema)) body: AddSceneInput,
+    @Body(new ZodValidationPipe(importRoteiroSchema)) body: ImportRoteiroInput,
   ) {
+    return this.scenes.importar(id, body.markdown);
+  }
+
+  @Post('projects/:id/scenes')
+  add(@Param('id') id: string, @Body(new ZodValidationPipe(addSceneSchema)) body: AddSceneInput) {
     return this.scenes.add(id, body.depoisDaCena);
   }
 

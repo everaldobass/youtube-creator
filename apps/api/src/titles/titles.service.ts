@@ -38,7 +38,7 @@ export class TitlesService {
     }
 
     const gerados = await this.ai.generateJson(promptTitulos(project), titleGenSchema);
-    const dados = gerados.slice(0, 10).map((t) => ({
+    const dados = gerados.slice(0, 5).map((t) => ({
       projectId,
       texto: t.texto.trim().slice(0, MAX_TITULO).trim(),
       estilo: t.estilo?.trim() ?? '',
@@ -48,6 +48,8 @@ export class TitlesService {
     await this.prisma.$transaction([
       this.prisma.title.deleteMany({ where: { projectId } }),
       this.prisma.title.createMany({ data: dados }),
+      // Alternativas novas pedem uma escolha nova: o título anterior deixa de valer.
+      this.prisma.project.update({ where: { id: projectId }, data: { tituloEscolhido: '' } }),
     ]);
     return this.list(projectId);
   }
@@ -78,6 +80,24 @@ export class TitlesService {
       this.prisma.title.update({ where: { id: titleId }, data: { escolhido: true } }),
     ]);
     await this.projects.update(projectId, { tituloEscolhido: title.texto });
+    return this.list(projectId);
+  }
+
+  /**
+   * Usa o título/ideia digitado na etapa 1 como título do vídeo, sem passar
+   * pela geração por IA. Limita a 100 caracteres (mesmo limite do
+   * `tituloEscolhido`).
+   */
+  async usarIdeia(projectId: string): Promise<TitleDto[]> {
+    const project = await this.projects.get(projectId);
+    const ideia = project.ideia.trim().slice(0, 100).trim();
+    if (!ideia) {
+      throw new BadRequestException(
+        'A etapa 1 não tem um título ou ideia. Volte lá e preencha o campo "Título ou ideia (opcional)".',
+      );
+    }
+    await this.prisma.title.updateMany({ where: { projectId }, data: { escolhido: false } });
+    await this.projects.update(projectId, { tituloEscolhido: ideia });
     return this.list(projectId);
   }
 }

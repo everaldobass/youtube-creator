@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import type { ProjectDto } from '@yt/shared';
+import type { AiSettingsDto, ProjectDto } from '@yt/shared';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -22,6 +22,7 @@ export const api = {
     request<ProjectDto>('/projects', { method: 'POST', body: JSON.stringify(body) }),
   duplicateProject: (id: string) => request<ProjectDto>(`/projects/${id}/duplicate`, { method: 'POST' }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+  aiSettings: () => request<AiSettingsDto>('/settings/ai'),
 };
 
 import type {

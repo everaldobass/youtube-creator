@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Pencil, Sparkles } from 'lucide-react';
+import { Check, FileText, Pencil, Sparkles } from 'lucide-react';
 import { MAX_TITULO, type TitleDto } from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
@@ -23,16 +23,23 @@ function corNota(nota: number) {
 export function TitulosView({
   projectId,
   initialTitles,
+  ideia,
+  tituloEscolhido,
   temEntrada,
   autoGerar = false,
 }: {
   projectId: string;
   initialTitles: TitleDto[];
+  /** "Título ou ideia (opcional)" preenchido na etapa 1. */
+  ideia: string;
+  /** Título salvo no projeto (pode ter vindo da etapa 1 ou de uma alternativa). */
+  tituloEscolhido: string;
   temEntrada: boolean;
   autoGerar?: boolean;
 }) {
   const router = useRouter();
   const [titles, setTitles] = useState(initialTitles);
+  const [tituloAtual, setTituloAtual] = useState(tituloEscolhido);
   const [gerando, setGerando] = useState(false);
   const [continuando, setContinuando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -40,13 +47,26 @@ export function TitulosView({
   const [rascunho, setRascunho] = useState('');
   const autoDisparado = useRef(false);
 
-  const escolhido = titles.find((t) => t.escolhido);
+  // O mesmo limite de `tituloEscolhido` (100) aplicado em usarIdeia no backend.
+  const ideiaHerdada = ideia.trim().slice(0, 100).trim();
+  const titulosEscolhidos = titles.filter((t) => t.escolhido);
+  const usandoIdeia =
+    Boolean(ideiaHerdada) && titulosEscolhidos.length === 0 && tituloAtual.trim() === ideiaHerdada;
+  const temTitulo = tituloAtual.trim().length > 0;
+
+  /** Mantém o título do projeto em sincronia com a lista devolvida pela API. */
+  function aplicar(lista: TitleDto[]) {
+    setTitles(lista);
+    const escolhidoNaLista = lista.find((t) => t.escolhido);
+    if (escolhidoNaLista) setTituloAtual(escolhidoNaLista.texto);
+  }
 
   async function gerar() {
     setGerando(true);
     setErro(null);
     try {
-      setTitles(await post<TitleDto[]>(`/projects/${projectId}/titles/generate`));
+      aplicar(await post<TitleDto[]>(`/projects/${projectId}/titles/generate`));
+      setTituloAtual(''); // gerar novas alternativas pede uma nova escolha
       setEditandoId(null);
       router.refresh();
     } catch (e) {
@@ -66,7 +86,8 @@ export function TitulosView({
       setGerando(true);
       setErro(null);
       try {
-        setTitles(await post<TitleDto[]>(`/projects/${projectId}/titles/generate`));
+        aplicar(await post<TitleDto[]>(`/projects/${projectId}/titles/generate`));
+        setTituloAtual('');
         router.refresh();
       } catch (e) {
         setErro(e instanceof Error ? e.message : 'Erro ao gerar títulos');
@@ -79,9 +100,19 @@ export function TitulosView({
   async function escolher(id: string) {
     setErro(null);
     try {
-      setTitles(await post<TitleDto[]>(`/projects/${projectId}/titles/${id}/select`));
+      aplicar(await post<TitleDto[]>(`/projects/${projectId}/titles/${id}/select`));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao escolher o título');
+    }
+  }
+
+  async function usarIdeia() {
+    setErro(null);
+    try {
+      aplicar(await post<TitleDto[]>(`/projects/${projectId}/titles/use-ideia`));
+      setTituloAtual(ideiaHerdada);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao usar o título da etapa 1');
     }
   }
 
@@ -90,6 +121,7 @@ export function TitulosView({
     try {
       const atualizado = await patch<TitleDto>(`/titles/${id}`, { texto: rascunho });
       setTitles((ts) => ts.map((t) => (t.id === id ? atualizado : t)));
+      if (atualizado.escolhido) setTituloAtual(atualizado.texto);
       setEditandoId(null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar o título');
@@ -113,12 +145,16 @@ export function TitulosView({
     <div className="mx-auto max-w-[1022px]">
       <StepHeader
         etapa="Etapa 2 de 9"
-        title="10 alternativas de título"
-        description="Cada título recebe uma nota de 0 a 10 por clareza e curiosidade. Escolha um ou edite antes de continuar."
+        title="5 alternativas de título"
+        description={
+          ideiaHerdada
+            ? 'O título da etapa 1 aparece sempre como opção. Escolha ele ou uma das 5 alternativas geradas pela IA.'
+            : 'A IA gera as 5 melhores alternativas, cada uma com nota de 0 a 10 por clareza e curiosidade.'
+        }
         actions={
           <Button onClick={gerar} disabled={gerando || !temEntrada}>
             <Sparkles className="size-4" />
-            {gerando ? 'Gerando...' : titles.length ? 'Gerar novas alternativas' : 'Gerar títulos'}
+            {gerando ? 'Gerando...' : titles.length ? 'Gerar outras 5' : 'Gerar 5 alternativas'}
           </Button>
         }
       />
@@ -134,6 +170,47 @@ export function TitulosView({
         </div>
       )}
 
+      {ideiaHerdada && (
+        <Card
+          className={cn(
+            'mt-6 flex flex-wrap items-center gap-4 p-4',
+            usandoIdeia && 'border-primary',
+          )}
+        >
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-border text-muted-foreground">
+            <FileText className="size-5" aria-hidden />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Título ou ideia da etapa 1
+            </p>
+            <p className="mt-0.5 font-medium leading-snug">{ideiaHerdada}</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {ideiaHerdada.length} caracteres · herdado de “Definições do projeto”
+              {ideia.trim().length > 100 && ' · cortado em 100 caracteres, o limite do título'}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
+            <Button
+              size="sm"
+              variant={usandoIdeia ? 'default' : 'outline'}
+              onClick={usarIdeia}
+              aria-pressed={usandoIdeia}
+            >
+              {usandoIdeia ? (
+                <>
+                  <Check className="size-4" /> Escolhido
+                </>
+              ) : (
+                'Usar este título'
+              )}
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {gerando && titles.length === 0 && (
         <ul className="mt-6 space-y-3" aria-busy="true">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -142,8 +219,21 @@ export function TitulosView({
         </ul>
       )}
 
+      {titles.length === 0 && !gerando && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          {temEntrada
+            ? ideiaHerdada
+              ? 'Nenhuma alternativa gerada ainda. Clique em “Gerar 5 alternativas” para ver sugestões — ou siga com o título da etapa 1.'
+              : 'Nenhuma alternativa gerada ainda. Clique em “Gerar 5 alternativas” para ver as sugestões da IA.'
+            : 'Preencha o tema ou a ideia na etapa 1 para gerar alternativas.'}
+        </p>
+      )}
+
       {titles.length > 0 && (
         <ul className={cn('mt-6 space-y-3', gerando && 'opacity-50')}>
+          <li className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            5 alternativas da IA
+          </li>
           {titles.map((t) => {
             const editando = editandoId === t.id;
             return (
@@ -247,9 +337,9 @@ export function TitulosView({
       <ActionBar
         voltarHref={`/projetos/${projectId}/definicoes`}
         onContinuar={continuar}
-        continuarDisabled={!escolhido}
+        continuarDisabled={!temTitulo}
         busy={continuando}
-        dica={escolhido ? undefined : 'Escolha um título para continuar'}
+        dica={temTitulo ? undefined : 'Escolha um título ou use o da etapa 1 para continuar'}
       />
     </div>
   );

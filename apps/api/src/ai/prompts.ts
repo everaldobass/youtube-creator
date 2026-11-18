@@ -1,4 +1,11 @@
-import { Formato, Idioma, MAX_PALAVRAS_THUMB } from '@yt/shared';
+import {
+  Formato,
+  IDIOMA_INFO,
+  Idioma,
+  LIMITES_FORMATO,
+  MAX_PALAVRAS_THUMB,
+  formatarTempo,
+} from '@yt/shared';
 import { z } from 'zod';
 
 /** Nome do idioma usado nas instruções de geração de texto. */
@@ -15,9 +22,10 @@ export function promptTitulos(p: {
   return `Você é especialista em títulos para YouTube.
 Idioma do vídeo: ${nomeDoIdioma(p.idioma)}. Escreva os títulos nesse idioma.
 Tema: ${p.tema || 'não informado'}. Público: ${p.publico || 'não informado'}. Ideia do usuário: ${p.ideia || 'não informada'}.
-Gere 10 títulos de até 70 caracteres, variando o estilo (pergunta, lista, curiosidade, benefício, contraste). Não prometa o que o vídeo não entrega.
+Considere várias opções mentalmente e escolha as 5 melhores — as que mais despertam curiosidade sem entregar o vídeo inteiro.
+Cada título deve ter até 70 caracteres, variando o estilo (pergunta, lista, curiosidade, benefício, contraste). Não prometa o que o vídeo não entrega e não repita a mesma ideia em dois títulos.
 Dê a cada título uma nota de 0 a 10 que combine clareza e curiosidade.
-Responda somente em JSON: [{"texto": string, "estilo": string, "nota": number de 0 a 10}]`;
+Responda somente em JSON com exatamente 5 itens: [{"texto": string, "estilo": string, "nota": number de 0 a 10}]`;
 }
 
 function regrasFormato(formato: Formato): string {
@@ -92,6 +100,106 @@ Regras obrigatórias para a primeira cena:
 
 Responda somente em JSON:
 {"cenas": [{"textoNarrado": string, "duracaoSegundos": number, "descricaoVisual": string, "movimentoCamera": string}], "fontes": [{"titulo": string, "autor": string, "ano": string, "url": string}]}`;
+}
+
+/**
+ * Prompt em Markdown para gerar o roteiro em uma IA externa e importar de
+ * volta no YouStudio. Traz o briefing do projeto e o esqueleto no mesmo
+ * padrão do arquivo exportado (`## Cena N`, `**Texto narrado**`,
+ * `**Descrição visual**`).
+ */
+export function promptRoteiroExterno(p: {
+  titulo: string;
+  tema: string;
+  publico: string;
+  formato: Formato;
+  duracaoMinutos: number;
+  idioma: Idioma;
+}): string {
+  const [min, max] = LIMITES_FORMATO[p.formato].cena;
+  const totalSegundos = p.duracaoMinutos * 60;
+  // Duração média arredondada (ex.: 15 min → 50 cenas de 18 s).
+  const media = Math.round((min + max) / 2);
+  const cenas = Math.max(1, Math.min(400, Math.round(totalSegundos / media)));
+  // Ajuste fino para a soma bater perto da duração alvo.
+  const porCena = Math.round(totalSegundos / cenas);
+  const formato = `${p.formato === 'shorts' ? 'Shorts' : 'Vídeo longo'} (${LIMITES_FORMATO[p.formato].proporcao})`;
+  const duracao = formatarTempo(totalSegundos);
+  const idioma = IDIOMA_INFO[p.idioma].rotulo;
+
+  const blocosCena: string[] = [];
+  for (let i = 1; i <= cenas; i++) {
+    const destaque = i === 1 ? ' (gancho)' : i === cenas && cenas > 1 ? ' (chamada para ação)' : '';
+    blocosCena.push(
+      `## Cena ${i}${destaque}`,
+      '',
+      `- Duração: ${porCena} s`,
+      '- Narração: pendente',
+      '- Imagem: pendente',
+      '',
+      '**Texto narrado**',
+      '',
+      '**Descrição visual**',
+      '',
+      '---',
+      '',
+    );
+  }
+
+  return `# Prompt de roteiro — ${p.titulo}
+
+Copie este arquivo inteiro e cole na IA de sua preferência (ChatGPT, Gemini, Claude…).
+Depois salve a resposta como um arquivo **.md** e importe em *Roteiro e retenção → Importar .md*.
+
+## Briefing do vídeo
+
+- **Vídeo:** ${p.titulo}
+- **Formato:** ${formato}
+- **Idioma:** ${idioma} — escreva o roteiro inteiro nesse idioma.
+- **Duração alvo:** ${duracao} (${totalSegundos} s), em cerca de ${cenas} cenas de ${min} a ${max} s cada.
+- **Público:** ${p.publico || 'público geral'}
+- **Tema e contexto:** ${p.tema || 'o do título'}
+
+## Como responder
+
+1. Responda **somente** com o Markdown que começa no separador \`---\` abaixo, mantendo a tabela e todos os cabeçalhos exatamente como estão.
+2. Preencha o bloco **Texto narrado** e o bloco **Descrição visual** de todas as cenas, sem deixar nenhum vazio.
+3. Numere as cenas em ordem (\`## Cena 1\`, \`## Cena 2\`, …), sem pular números. Acrescente mais cenas se precisar.
+4. A soma das durações deve ficar próxima de ${totalSegundos} segundos; ajuste o valor de \`- Duração:\` em cada cena.
+5. A primeira cena é o gancho: uma pergunta instigante, um fato surpreendente ou uma cena concreta — sem “Olá pessoal”, “No vídeo de hoje” ou fórmulas parecidas.
+6. A última cena convida a se inscrever.
+7. Não use JSON, emojis, marcações de negrito dentro da narração, nem listas dentro dos textos. Frases curtas, prontas para serem lidas em voz alta.
+8. Não invente dados, números, datas, nomes ou citações. Na seção **Referências**, liste apenas fontes reais e verificáveis; se não houver, apague a seção inteira.
+9. A descrição visual diz o que aparece na tela, nomeando as pessoas, povos ou personagens citados e o que estão fazendo. Não peça texto nem letras dentro da imagem.
+
+## Estrutura documental
+
+1. Abertura com pergunta instigante ou fato surpreendente e específico.
+2. Contextualização do assunto (onde, quando, por que importa).
+3. Desenvolvimento por tópicos, com explicações detalhadas.
+4. Curiosidades relevantes e verificáveis.
+5. Informações históricas, geográficas ou científicas que possam ser conferidas.
+6. Transições naturais entre os assuntos (nada de “agora vamos falar de…”).
+7. Conclusão que retoma os pontos principais sem repetir frases inteiras.
+
+Não repita ideias, dados ou frases entre cenas. Evite frases genéricas (“é importante ressaltar”, “como todos sabem”) e introduções longas.
+
+---
+
+| | |
+| --- | --- |
+| Formato | ${formato} |
+| Idioma | ${idioma} |
+| Narração | ${duracao} em ${cenas} cenas |
+| Duração alvo | ${duracao} |
+| Revisão editorial | não revisado |
+
+${blocosCena.join('\n')}\n## Referências
+
+Se (e somente se) você citou fontes reais e verificáveis, liste aqui no formato:
+\`1. **Título da fonte** — Autor (ano) — <https://link>\`
+Caso contrário, apague esta seção inteira.
+`;
 }
 
 export function promptRefazerCena(p: {

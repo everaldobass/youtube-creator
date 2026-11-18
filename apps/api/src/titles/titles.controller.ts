@@ -27,6 +27,12 @@ export class TitlesController {
     return this.titles.update(titleId, body.texto);
   }
 
+  /** Usa o título/ideia da etapa 1, sem gerar alternativas por IA. */
+  @Post('projects/:id/titles/use-ideia')
+  usarIdeia(@Param('id') id: string) {
+    return this.titles.usarIdeia(id);
+  }
+
   @Post('projects/:id/titles/:titleId/select')
   select(@Param('id') id: string, @Param('titleId') titleId: string) {
     return this.titles.select(id, titleId);

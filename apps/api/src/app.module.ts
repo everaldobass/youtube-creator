@@ -19,6 +19,7 @@ import { MusicModule } from './music/music.module';
 import { EditorialModule } from './editorial/editorial.module';
 import { VisualAssetsModule } from './visual/visual-assets.module';
 import { QualityModule } from './quality/quality.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { QualityModule } from './quality/quality.module';
     EditorialModule,
     VisualAssetsModule,
     QualityModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
 })

@@ -52,6 +52,8 @@ model Project {
   legendaCor      String      @default("#C4B5FD") // cor do destaque karaokê
   usarCameraSugerida Boolean  @default(false) // usa a sugestão de movimento de cada cena
   editorialStatus String      @default("nao_revisado") // nao_revisado | aprovado | ressalvas | correcao
+  // Roteiro importado de um .md escrito à mão: a revisão editorial por IA fica opcional.
+  roteiroManual   Boolean     @default(false)
   fontesRoteiro   String      @default("") // JSON: [{ titulo, autor, ano, url }]
   revisaoFinalEm  DateTime?
   etapaAtual      String      @default("definicoes")
@@ -225,4 +227,12 @@ model Export {
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+// Preferências salvas na tela de Configurações (chaves e modelos de IA).
+// O valor do banco substitui o do .env; linha apagada = volta a usar o .env.
+model Setting {
+  chave       String   @id // ex.: GEMINI_MODEL_TEXT
+  valor       String
+  atualizadoEm DateTime @updatedAt
 }

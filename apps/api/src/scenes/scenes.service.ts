@@ -3,6 +3,7 @@ import { Scene } from '@prisma/client';
 import {
   FonteRoteiro,
   IDIOMA_INFO,
+  ImportRoteiroResponse,
   LIMITES_FORMATO,
   ProjectDto,
   ROTULO_CLASSIFICACAO,
@@ -17,10 +18,11 @@ import {
   singleSceneGenSchema,
 } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
-import { promptRefazerCena, promptRoteiro } from '../ai/prompts';
+import { promptRefazerCena, promptRoteiro, promptRoteiroExterno } from '../ai/prompts';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { STORAGE_DRIVER, StorageDriver } from '../storage/storage.service';
+import { lerRoteiroMarkdown } from './roteiro-import';
 
 export const toSceneDto = (s: Scene): SceneDto => ({
   id: s.id,
@@ -143,8 +145,10 @@ export class ScenesService {
       scenes,
       resumo: this.resumo(project, scenes),
       fontes: fontesDoProjeto(project),
+      roteiroManual: project.roteiroManual,
       editorial: {
-        classificacao: (review?.classificacao as ScenesResponse['editorial']['classificacao']) ?? null,
+        classificacao:
+          (review?.classificacao as ScenesResponse['editorial']['classificacao']) ?? null,
         pendentes,
         revisadoEm: review?.criadoEm.toISOString() ?? null,
       },
@@ -189,7 +193,12 @@ export class ScenesService {
     }
 
     scenes.forEach((s, i) => {
-      const destaque = i === 0 ? ' (gancho)' : i === scenes.length - 1 && scenes.length > 1 ? ' (chamada para ação)' : '';
+      const destaque =
+        i === 0
+          ? ' (gancho)'
+          : i === scenes.length - 1 && scenes.length > 1
+            ? ' (chamada para ação)'
+            : '';
       linhas.push(
         `## Cena ${s.numero}${destaque}`,
         '',
@@ -234,9 +243,33 @@ export class ScenesService {
       linhas.push('_Nenhuma referência registrada com este roteiro._', '');
     }
 
+    linhas.push(
+      '> Para editar fora do app: altere os blocos "Texto narrado" e "Descrição visual" e importe o arquivo de volta em **Roteiro e retenção → Importar .md**.',
+      '',
+    );
     linhas.push(`_Exportado do YouStudio em ${new Date().toLocaleDateString('pt-BR')}._`, '');
 
     return { nome: `${arquivoSeguro(titulo)}.md`, markdown: linhas.join('\n') };
+  }
+
+  /**
+   * Prompt em Markdown para o usuário gerar o roteiro numa IA externa e
+   * importar de volta. Usa as definições do projeto (título, tema, público,
+   * formato, duração, idioma) e já traz o esqueleto das cenas no padrão
+   * aceito pela importação.
+   */
+  async promptExterno(projectId: string): Promise<{ nome: string; markdown: string }> {
+    const project = await this.projects.get(projectId);
+    const titulo = project.tituloEscolhido || project.ideia || project.tema || 'Roteiro sem título';
+    const markdown = promptRoteiroExterno({
+      titulo,
+      tema: project.tema,
+      publico: project.publico,
+      formato: project.formato,
+      duracaoMinutos: project.duracaoMinutos,
+      idioma: project.idioma,
+    });
+    return { nome: `${arquivoSeguro(titulo)}-prompt-roteiro.md`, markdown };
   }
 
   /** Dois passos (negativo e depois positivo) para não violar o índice único (projectId, numero). */
@@ -305,10 +338,69 @@ export class ScenesService {
       this.prisma.visualAsset.updateMany({ where: { projectId }, data: { sceneNumero: null } }),
       this.prisma.project.update({
         where: { id: projectId },
-        data: { fontesRoteiro: JSON.stringify(fontes), editorialStatus: 'nao_revisado' },
+        data: {
+          fontesRoteiro: JSON.stringify(fontes),
+          editorialStatus: 'nao_revisado',
+          roteiroManual: false,
+        },
       }),
     ]);
     return this.resposta(await this.projects.get(projectId));
+  }
+
+  /**
+   * Importa um roteiro escrito à mão (.md no mesmo padrão do exportado).
+   * Substitui as cenas atuais, apaga mídias/jobs antigos e marca o roteiro
+   * como manual — a revisão editorial por IA passa a ser opcional.
+   */
+  async importar(projectId: string, markdown: string): Promise<ImportRoteiroResponse> {
+    await this.projects.get(projectId); // valida o dono
+    const { cenas, fontes, avisos } = lerRoteiroMarkdown(markdown);
+
+    if (cenas.length === 0) {
+      throw new BadRequestException(
+        'Nenhuma cena encontrada no arquivo. Use o mesmo padrão do roteiro exportado: uma seção "## Cena 1" para cada cena, com "**Texto narrado**" e, se quiser, "**Descrição visual**".',
+      );
+    }
+
+    const antigas = await this.prisma.scene.findMany({
+      where: { projectId },
+      select: { id: true, audioPath: true, imagemPath: true },
+    });
+    await this.limparArquivos(antigas);
+    const idsAntigos = antigas.map((s) => s.id);
+
+    await this.prisma.$transaction([
+      // Jobs presos às cenas antigas deixariam erros órfãos na tela.
+      this.prisma.job.deleteMany({
+        where: { projectId, tipo: { in: ['narracao', 'imagem'] }, alvoId: { in: idsAntigos } },
+      }),
+      this.prisma.scene.deleteMany({ where: { projectId } }),
+      this.prisma.scene.createMany({
+        data: cenas.map((c, i) => ({
+          projectId,
+          numero: i + 1,
+          textoNarrado: c.textoNarrado,
+          duracaoSegundos: limitarDuracao(c.duracaoSegundos),
+          descricaoVisual: c.descricaoVisual,
+        })),
+      }),
+      // Um roteiro novo invalida a revisão editorial anterior.
+      this.prisma.editorialIssue.deleteMany({ where: { projectId } }),
+      this.prisma.editorialReview.deleteMany({ where: { projectId } }),
+      this.prisma.visualAsset.updateMany({ where: { projectId }, data: { sceneNumero: null } }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: {
+          fontesRoteiro: JSON.stringify(fontes),
+          editorialStatus: 'nao_revisado',
+          roteiroManual: true,
+        },
+      }),
+    ]);
+
+    const resposta = await this.resposta(await this.projects.get(projectId));
+    return { ...resposta, importado: { cenas: cenas.length, fontes: fontes.length, avisos } };
   }
 
   async add(projectId: string, depoisDaCena?: number): Promise<ScenesResponse> {
@@ -334,12 +426,16 @@ export class ScenesService {
 
   async reorder(projectId: string, ids: string[]): Promise<ScenesResponse> {
     const project = await this.projects.get(projectId);
-    const existentes = await this.prisma.scene.findMany({ where: { projectId }, select: { id: true } });
+    const existentes = await this.prisma.scene.findMany({
+      where: { projectId },
+      select: { id: true },
+    });
     const mesmos =
       ids.length === existentes.length &&
       new Set(ids).size === ids.length &&
       existentes.every((s) => ids.includes(s.id));
-    if (!mesmos) throw new BadRequestException('A lista de cenas não corresponde ao roteiro atual.');
+    if (!mesmos)
+      throw new BadRequestException('A lista de cenas não corresponde ao roteiro atual.');
     await this.renumerar(projectId, ids);
     return this.resposta(project);
   }
@@ -354,7 +450,8 @@ export class ScenesService {
     if (input.textoNarrado !== undefined && input.textoNarrado !== scene.textoNarrado) {
       data.textoNarrado = input.textoNarrado;
       data.statusNarracao = desatualizar(scene.statusNarracao);
-    }    if (input.descricaoVisual !== undefined && input.descricaoVisual !== scene.descricaoVisual) {
+    }
+    if (input.descricaoVisual !== undefined && input.descricaoVisual !== scene.descricaoVisual) {
       data.descricaoVisual = input.descricaoVisual;
       data.statusImagem = desatualizar(scene.statusImagem);
     }

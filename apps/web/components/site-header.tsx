@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Clapperboard, Plus } from 'lucide-react';
+import { Clapperboard, Plus, Settings2 } from 'lucide-react';
 import { createDraftProject } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 
@@ -23,6 +23,13 @@ export function SiteHeader() {
             className="hidden rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground sm:block"
           >
             Meus vídeos
+          </Link>
+          <Link
+            href="/configuracoes"
+            className="hidden rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground sm:block"
+          >
+            <Settings2 className="mr-1.5 inline size-4 align-[-2px]" aria-hidden />
+            Configurações
           </Link>
           <form action={createDraftProject}>
             <Button type="submit" size="sm">
