@@ -112,7 +112,7 @@ export function QualidadeCard({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h3 className="flex items-center gap-2 font-semibold">
-                <ClipboardCheck className="size-4 text-ai" /> Lista de verificação
+                <ClipboardCheck className="size-4 text-ai-soft" /> Lista de verificação
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Roteiro, fontes, imagens, narração, legendas, música, duração, formato e exportação.
@@ -170,7 +170,7 @@ export function QualidadeCard({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h3 className="flex items-center gap-2 font-semibold">
-                <Waves className="size-4 text-ai" /> Análise de áudio
+                <Waves className="size-4 text-ai-soft" /> Análise de áudio
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Referências: {AUDIO_REFERENCIA.lufsAlvo} LUFS ±{AUDIO_REFERENCIA.lufsTolerancia},

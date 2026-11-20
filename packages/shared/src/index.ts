@@ -334,6 +334,11 @@ export interface ScenesResponse {
   };
   /** Roteiro importado de um .md escrito à mão (dispensa a revisão por IA). */
   roteiroManual: boolean;
+  /**
+   * Avisos da última geração (ex.: a IA parou antes de 90% da duração alvo).
+   * Vazio nas demais operações.
+   */
+  avisos: string[];
 }
 
 /**
@@ -387,6 +392,9 @@ export function proximaEtapa(etapa: StepSlug): StepSlug {
 // ---------------------------------------------------------------------------
 
 export const MAX_CARACTERES_TAGS = 500;
+/** Faixa recomendada de tags: da mais ampla à mais específica. */
+export const MIN_TAGS = 20;
+export const MAX_TAGS = 25;
 /** Texto curto da thumbnail: até 10 palavras, como no padrão de CTR do YouTube. */
 export const MAX_PALAVRAS_THUMB = 10;
 
@@ -454,10 +462,20 @@ export interface CapituloDto {
   titulo: string;
 }
 
+/** Intervalo aproximado entre capítulos da descrição (um a cada 3 minutos). */
+export const INTERVALO_CAPITULO_SEGUNDOS = 180;
+/** O YouTube só mostra capítulos com pelo menos 3 itens. */
+export const MIN_CAPITULOS = 3;
+export const MAX_CAPITULOS = 12;
+
 export interface DescriptionResponse {
   descricao: string;
   capitulos: CapituloDto[];
   temRoteiro: boolean;
+  /** Duração usada para distribuir os capítulos: áudio real ou estimativa das cenas. */
+  duracaoSegundos: number;
+  /** Duração alvo definida no projeto. */
+  duracaoAlvoSegundos: number;
 }
 
 export interface ExportResponse {
@@ -575,7 +593,7 @@ export const descGenSchema = z.object({
 });
 
 export const updateTagsSchema = z.object({
-  tags: z.array(z.string().trim().min(1).max(100)).max(40),
+  tags: z.array(z.string().trim().min(1).max(100)).max(MAX_TAGS),
 });
 export type UpdateTagsInput = z.infer<typeof updateTagsSchema>;
 
@@ -891,6 +909,206 @@ export type UpdateProvedorIaInput = z.infer<typeof updateProvedorIaSchema>;
 
 export const testarProvedorIaSchema = z.object({ provedor: z.enum(PROVEDORES_IA) });
 export type TestarProvedorIaInput = z.infer<typeof testarProvedorIaSchema>;
+
+// ---------------------------------------------------------------------------
+// Pacote do projeto (.zip) — exportar e importar para continuar editando
+// ---------------------------------------------------------------------------
+
+export const PROJETO_PACOTE_APP = 'youstudio';
+/** Versão do manifesto. O importador recusa versões maiores que esta. */
+export const PROJETO_PACOTE_VERSAO = 1;
+
+/** Definições do projeto que viajam no `projeto.json` (sem ids, dono ou datas). */
+export const projetoPacoteDefinicoesSchema = z.object({
+  ideia: z.string().max(200).default(''),
+  tema: z.string().max(1000).default(''),
+  publico: z.string().max(200).default(''),
+  formato: z.enum(FORMATOS).default('longo'),
+  duracaoMinutos: z.number().int().min(1).max(30).default(5),
+  idioma: z.enum(IDIOMAS).default('pt-BR'),
+  tituloEscolhido: z.string().max(100).default(''),
+  vozNome: z.string().max(60).default('voz-masculina-1'),
+  vozInstrucaoTom: z.string().max(300).default('suave, claro, bem explicado'),
+  narracaoNatural: z.boolean().default(true),
+  narracaoVelocidade: z
+    .number()
+    .int()
+    .min(NARRACAO_VELOCIDADE_MIN)
+    .max(NARRACAO_VELOCIDADE_MAX)
+    .default(97),
+  pronuncia: z.string().max(2000).default(''),
+  estiloVisual: z
+    .string()
+    .max(600)
+    .default('3D estilizado, cores quentes, iluminação suave, sem texto na imagem'),
+  descricao: z.string().max(5000).default(''),
+  efeitoCamera: z.enum(EFEITO_CAMERA_SLUGS).default('alternado'),
+  usarCameraSugerida: z.boolean().default(false),
+  legendasAtivas: z.boolean().default(true),
+  legendaTamanho: z.number().int().min(60).max(160).default(100),
+  legendaPosicao: z.enum(LEGENDA_POSICOES).default('baixo'),
+  legendaEstilo: z.enum(LEGENDA_ESTILOS).default('negrito'),
+  legendaFonte: z.string().max(60).default('Noto Sans'),
+  legendaCor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#C4B5FD'),
+  editorialStatus: z.enum(['nao_revisado', 'aprovado', 'ressalvas', 'correcao']).default('nao_revisado'),
+  roteiroManual: z.boolean().default(false),
+  fontesRoteiro: z.string().max(20000).default(''),
+  revisaoFinalEm: z.string().nullable().default(null),
+});
+export type ProjetoPacoteDefinicoes = z.infer<typeof projetoPacoteDefinicoesSchema>;
+
+/** Arquivo citado pelo manifesto: caminho relativo dentro do próprio ZIP. */
+const caminhoNoZip = z.string().trim().max(300);
+
+export const cenaPacoteSchema = z.object({
+  numero: z.number().int().min(1),
+  textoNarrado: z.string().max(200_000).default(''),
+  duracaoSegundos: z.number().int().min(0).max(600).default(0),
+  descricaoVisual: z.string().max(20_000).default(''),
+  promptImagem: z.string().max(20_000).default(''),
+  sugestaoCamera: z.string().max(40).default(''),
+  alertaImagem: z.string().max(1000).default(''),
+  statusNarracao: z.string().max(30).default('pendente'),
+  statusImagem: z.string().max(30).default('pendente'),
+  audioDuracaoMs: z.number().int().min(0).nullable().default(null),
+  versaoMidia: z.number().int().min(0).default(0),
+  arquivoImagem: caminhoNoZip.nullable().default(null),
+  arquivoAudio: caminhoNoZip.nullable().default(null),
+  audios: z
+    .array(
+      z.object({
+        arquivo: caminhoNoZip,
+        duracaoMs: z.number().int().min(0).default(0),
+        atual: z.boolean().default(false),
+        criadoEm: z.string().optional(),
+      }),
+    )
+    .max(20)
+    .default([]),
+});
+export type CenaPacote = z.infer<typeof cenaPacoteSchema>;
+
+export const tituloPacoteSchema = z.object({
+  texto: z.string().max(300),
+  estilo: z.string().max(120).default(''),
+  nota: z.number().default(0),
+  escolhido: z.boolean().default(false),
+});
+
+export const thumbnailPacoteSchema = z.object({
+  variacao: z.number().int().min(1).max(20),
+  textoNaImagem: z.string().max(300).default(''),
+  escolhida: z.boolean().default(false),
+  arquivo: caminhoNoZip.nullable().default(null),
+});
+
+export const capituloPacoteSchema = z.object({
+  tempo: z.string().max(20),
+  titulo: z.string().max(300),
+});
+
+export const elementoVisualPacoteSchema = z.object({
+  sceneNumero: z.number().int().min(1).nullable().default(null),
+  tipo: z.enum(TIPOS_VISUAL).default('mapa'),
+  titulo: z.string().max(200).default(''),
+  periodo: z.string().max(200).default(''),
+  descricao: z.string().max(1500).default(''),
+  prompt: z.string().max(5000).default(''),
+  arquivo: caminhoNoZip.nullable().default(null),
+});
+
+export const revisaoPacoteSchema = z.object({
+  classificacao: z.enum(CLASSIFICACOES_EDITORIAL),
+  resumo: z.string().max(5000).default(''),
+  criadoEm: z.string().optional(),
+  issues: z
+    .array(
+      z.object({
+        cenaNumero: z.number().int().min(1).nullable().default(null),
+        tipo: z.enum(TIPOS_PROBLEMA_EDITORIAL),
+        trecho: z.string().max(5000).default(''),
+        problema: z.string().max(5000),
+        explicacao: z.string().max(10_000).default(''),
+        sugestao: z.string().max(10_000).default(''),
+        fonte: z.string().max(2000).default(''),
+        confianca: z.enum(CONFIANCAS_EDITORIAL).default('media'),
+        status: z.enum(['pendente', 'aceita', 'rejeitada']).default('pendente'),
+      }),
+    )
+    .max(500)
+    .default([]),
+});
+
+export const musicaPacoteSchema = z.object({
+  arquivo: caminhoNoZip.nullable().default(null),
+  nome: z.string().max(120).default(''),
+  artista: z.string().max(120).default(''),
+  origem: z.string().max(200).default(''),
+  credito: z.string().max(500).default(''),
+  volume: z.number().int().min(0).max(100).default(MUSICA_VOLUME_PADRAO),
+  ducking: z.boolean().default(true),
+});
+
+/**
+ * Manifesto `projeto.json` na raiz do ZIP. É a fonte para reconstruir o
+ * projeto; os demais arquivos continuam iguais ao pacote de entrega.
+ */
+export const projetoPacoteSchema = z.object({
+  schemaVersion: z.number().int().min(1),
+  app: z.literal(PROJETO_PACOTE_APP),
+  exportadoEm: z.string(),
+  etapaAtual: z.enum(STEP_SLUGS),
+  projeto: projetoPacoteDefinicoesSchema,
+  titles: z.array(tituloPacoteSchema).max(100).default([]),
+  scenes: z.array(cenaPacoteSchema).max(2000).default([]),
+  tags: z.array(z.string().max(100)).max(60).default([]),
+  chapters: z.array(capituloPacoteSchema).max(500).default([]),
+  thumbnails: z.array(thumbnailPacoteSchema).max(50).default([]),
+  visualAssets: z.array(elementoVisualPacoteSchema).max(200).default([]),
+  editorial: revisaoPacoteSchema.nullable().default(null),
+  musica: musicaPacoteSchema.nullable().default(null),
+});
+export type ProjetoPacote = z.infer<typeof projetoPacoteSchema>;
+
+export interface ImportPreviewResumo {
+  cenas: number;
+  audios: number;
+  imagens: number;
+  versoesAudio: number;
+  musicas: number;
+  thumbnails: number;
+  elementosVisuais: number;
+  titulos: number;
+  tags: number;
+  capitulos: number;
+}
+
+export interface ImportItemIgnorado {
+  caminho: string;
+  motivo: string;
+}
+
+export interface ImportPreviewResponse {
+  /** Falso para pacotes antigos, sem `projeto.json`. */
+  manifesto: boolean;
+  arquivo: { nome: string; tamanhoBytes: number };
+  titulo: string;
+  formato: Formato;
+  idioma: Idioma;
+  etapaAtual: StepSlug;
+  resumo: ImportPreviewResumo;
+  avisos: string[];
+  ignorados: ImportItemIgnorado[];
+}
+
+export interface ImportProjectResponse {
+  projeto: ProjectDto;
+  avisos: string[];
+  ignorados: ImportItemIgnorado[];
+}
+
+/** Limite padrão do upload do ZIP; pode ser trocado por IMPORT_MAX_MB. */
+export const IMPORT_MAX_MB_PADRAO = 500;
 
 // ----- helpers compartilhados -----
 

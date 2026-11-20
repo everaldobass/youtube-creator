@@ -56,11 +56,11 @@ no fim das frases (a opção **Narração mais humana** fica ligada por padrão 
 2. **Títulos:** 10 alternativas com nota; editar e escolher.
 3. **Roteiro:** cenas com texto, duração, descrição visual, sugestão de movimento de câmera, **revisão editorial** (classificação, apontamentos com trecho/problema/explicação/sugestão/fonte e aceitar/rejeitar individual) e **referências** retornadas pelo roteiro. Editar, reordenar, apagar, adicionar e refazer cena, com **download do roteiro em Markdown** (`.md`) para revisar ou gravar fora do app.
 4. **Narração:** voz fixa em todas as cenas, **velocidade de 85% a 110%**, **dicionário de pronúncia**, opção **Narração mais humana**, amostra de voz, player por cena, refazer individual, **versões para comparar**, **aprovação por cena** e ajuste da duração planejada ao áudio real.
-5. **Imagens:** guia de estilo único, uma imagem por cena, copiar prompt (Google Flow), **exportar todos os prompts em um .md**, enviar imagem própria, **verificar correspondência entre narração e imagem** e **mapas/linhas do tempo** gerados por IA. Cada prompt traz a narração da cena e regras de fidelidade: as pessoas/povos citados aparecem como protagonistas, nunca uma paisagem vazia.
-6. **Tags:** 15 a 25 tags, limite de 500 caracteres, edição manual.
+5. **Imagens:** guia de estilo único, uma imagem por cena, copiar prompt (Google Flow), **exportar todos os prompts em um .md** (completo ou no formato enxuto `prompt-criar_img.md`), **enviar uma pasta inteira de imagens** (o número em `cena-001...` define a cena), enviar imagem própria, **verificar correspondência entre narração e imagem** e **mapas/linhas do tempo** gerados por IA. Cada prompt traz a narração da cena e regras de fidelidade: as pessoas/povos citados aparecem como protagonistas, nunca uma paisagem vazia.
+6. **Tags:** 20 a 25 tags, limite de 500 caracteres, edição manual.
 7. **Thumbnails:** 2 variações 1280×720 com até 10 palavras; escolher, editar texto, refazer e baixar.
-8. **Descrição:** gancho, resumo, capítulos com os tempos reais das cenas, chamada para se inscrever e hashtags.
-9. **Vídeo:** prévia no navegador com o movimento escolhido, legendas sincronizadas (posição, fonte, cor e verificação de legibilidade), música de fundo (upload ou biblioteca local), **análise de áudio e prévia da mixagem**, **checklist de revisão final**, MP4 (H.264 + AAC) montado no servidor e pacote ZIP (imagens, áudios, música, .srt, tempos, elementos visuais).
+8. **Descrição:** gancho, resumo, capítulos a cada ~3 minutos cobrindo o vídeo inteiro (no início de cenas reais), chamada para se inscrever e hashtags.
+9. **Vídeo:** prévia no navegador com o movimento escolhido, legendas sincronizadas (posição, fonte, cor e verificação de legibilidade), música de fundo (upload ou biblioteca local), **análise de áudio e prévia da mixagem**, **checklist de revisão final**, MP4 (H.264 + AAC) montado no servidor e pacote ZIP reimportável (imagens, áudios, música, .srt, tempos, elementos visuais e `projeto.json`).
 
 Gerações longas (narração, thumbnails e vídeo) rodam em uma fila no servidor, com no máximo 2 ao mesmo tempo, progresso na tela e "Tentar de novo" em caso de erro. Dá para fechar a aba durante a geração. As imagens das cenas são enviadas manualmente na etapa 5.
 
@@ -155,6 +155,29 @@ Na etapa 5, o botão **Exportar prompts (.md)** baixa um arquivo markdown com:
 Use o arquivo para gerar as imagens no Google Flow/Nano Banana e salve cada uma com o nome da cena antes
 de enviar na etapa 5.
 
+O botão **Exportar prompt IMG (.md)** baixa o `prompt-criar_img.md`, uma versão enxuta no formato:
+
+```text
+Observação: Criar as imagens e renomear referente a cena que ela pertence.
+Proporção: 16:9
+Estilo visual: ...
+
+Cenas 1 a 10
+Arquivo sugerido: cena-001.png
+Descrição visual: ...
+
+Arquivo sugerido: cena-002.png
+Descrição visual: ...
+```
+
+As cenas são agrupadas de 10 em 10 e cada bloco traz apenas o arquivo sugerido e a descrição visual,
+sem o prompt completo — útil para colar em ferramentas externas de geração de imagem.
+
+Na mesma tela, o botão **Enviar pasta de imagens** permite escolher uma pasta inteira. O número no
+nome do arquivo define a cena: `cena-001.png`, `cena-001.png_057e23b3.jpg` e `001.png` vão para a
+Cena 1, e assim por diante. O envio mostra o progresso e avisa quais arquivos foram ignorados
+(formato, tamanho ou cena não encontrada).
+
 ## Movimento de câmera nas imagens
 
 Na etapa 9, o card **Movimento de câmera nas imagens** aplica um efeito "Ken Burns" na montagem:
@@ -240,10 +263,52 @@ diferença entre cenas **até 4 LU** e música **pelo menos 6 dB abaixo da voz**
 ajustáveis em `AUDIO_REFERENCIA` (`packages/shared/src/index.ts`), não regras rígidas — o app mede e
 alerta, sem alterar o áudio automaticamente.
 
+## Exportar e importar projeto
+
+Na etapa 9, **Baixar projeto (.zip)** gera um pacote que pode ser importado de volta em outra máquina
+ou depois de reinstalar o app. O ZIP mantém o formato de entrega (imagens, áudios, versões de áudio,
+elementos visuais, legendas, tempos, música, thumbnails, título, tags e descrição) e acrescenta um
+`projeto.json` na raiz:
+
+- `schemaVersion` e `app` para o importador saber o que está lendo;
+- definições do projeto (tema, público, formato, idioma, voz, estilo visual, legendas, efeito de câmera);
+- títulos sugeridos, roteiro completo, status editorial, fontes e revisão editorial com os problemas;
+- tags, capítulos, thumbnails (texto e qual foi escolhida), elementos visuais e metadados da música.
+
+**Nada de segredo vai no pacote:** a tabela `Setting`, o `.env` e as chaves de API ficam só no servidor.
+
+Para importar, use **Importar projeto (.zip)** na tela inicial (cabeçalho ou estado vazio). O app:
+
+1. envia o ZIP para `POST /projects/import/preview` e mostra um resumo (cenas, áudios, imagens, versões,
+   thumbnails, tags, capítulos, música), a etapa em que o projeto continua e eventuais avisos;
+2. só grava depois da confirmação, em `POST /projects/import`, sempre criando um **projeto novo**;
+3. grava os arquivos com chaves novas (`projects/<novoId>/...`), sem confiar nos nomes do ZIP;
+4. recalcula o status de cada cena pelo arquivo que realmente existe e escolhe a etapa pelo conteúdo;
+5. redireciona para a etapa retomada.
+
+O limite do upload é `IMPORT_MAX_MB` (padrão **500**). ZIPs antigos, sem `projeto.json`, entram em modo
+de recuperação parcial a partir de `tempos.json`, `titulo.txt`, `tags.txt`, `descricao.txt`, `imagens/`,
+`audios/`, `thumbnails/` e `musica/`.
+
+### Segurança do importador
+
+O diretório central do ZIP é validado antes de qualquer escrita: caminhos com `..`, absolutos ou com
+barra invertida, links simbólicos, ZIPs com senha, compressão não suportada, extensões fora da lista,
+mais de 5.000 entradas, arquivo acima de 128 MB, conteúdo descompactado acima de 2 GB e taxa de
+compressão suspeita (bomba) são recusados com mensagem em português. O `projeto.json` é validado pelo
+mesmo schema Zod do export; um `schemaVersion` mais novo que o app é recusado com pedido de atualização.
+Se algo falhar no meio, o prefixo `projects/<novoId>` é apagado e nenhum projeto fica pela metade.
+
+Teste de fumaça (não faz parte do build):
+```bash
+cd apps/api
+DATABASE_URL=file:./dev.db npx ts-node -P tsconfig.json src/import/import.smoke.ts
+```
+
 ## Estrutura
 ```
 apps/web        Next.js: telas das 9 etapas
-apps/api        NestJS: projetos, títulos, roteiro, editorial, narração, imagens, elementos visuais, tags, thumbnails, descrição, música, qualidade, exportação, fila de jobs
+apps/api        NestJS: projetos, títulos, roteiro, editorial, narração, imagens, elementos visuais, tags, thumbnails, descrição, música, qualidade, exportação, importação, fila de jobs
 packages/shared tipos e schemas Zod usados pelos dois lados
 storage/        arquivos gerados (imagens, áudios, thumbnails, vídeo)
 storage/musicas músicas livres para a biblioteca local (opcional, com musicas.json)
@@ -260,6 +325,9 @@ storage/musicas músicas livres para a biblioteca local (opcional, com musicas.j
 - Mudar título ou roteiro não marca tags, thumbnails e descrição como desatualizadas (narração e imagens são marcadas).
 - Mudar o efeito de câmera, as legendas ou a música não avisa que o MP4 está desatualizado; basta montar de novo.
 - O MP4 é montado em um único processo no servidor, sem exportar em partes; vídeos de 30 minutos levam alguns minutos e usam bastante memória.
+- A importação não restaura o MP4 montado nem a fila de jobs: o vídeo precisa ser montado de novo e as tarefas pendentes são recriadas ao usar cada etapa.
+- Importar sempre cria um projeto novo (não sobrescreve nem mescla com um existente) e a etapa retomada nunca é maior do que o conteúdo do pacote sustenta.
+- Pacotes antigos (sem `projeto.json`) recuperam só o que o ZIP de entrega trazia: definições, títulos alternativos, prompts e revisão editorial não voltam.
 - A biblioteca de músicas lê uma pasta local: ao migrar para o Supabase, as faixas precisam ser enviadas pelo card (o upload próprio já usa o storage).
 - A Biblioteca de Áudio do YouTube não tem API pública; o download da faixa é manual.
 - Uma única voz (configurada por `FISH_VOICE_ID`), sem seletor.

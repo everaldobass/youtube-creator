@@ -1,9 +1,13 @@
 import {
   Formato,
   IDIOMA_INFO,
+  INTERVALO_CAPITULO_SEGUNDOS,
   Idioma,
   LIMITES_FORMATO,
+  MAX_CARACTERES_TAGS,
   MAX_PALAVRAS_THUMB,
+  MAX_TAGS,
+  MIN_TAGS,
   formatarTempo,
 } from '@yt/shared';
 import { z } from 'zod';
@@ -30,8 +34,8 @@ Responda somente em JSON com exatamente 5 itens: [{"texto": string, "estilo": st
 
 function regrasFormato(formato: Formato): string {
   return formato === 'shorts'
-    ? 'Divida em cenas de 3 a 8 segundos (Shorts, vertical). A primeira cena é um gancho forte nos 3 primeiros segundos; a última convida a se inscrever.'
-    : 'Divida em cenas de 10 a 25 segundos. A primeira cena é um gancho; a última convida a se inscrever.';
+    ? 'Divida em cenas de 3 a 8 segundos (Shorts, vertical). A primeira cena é um gancho forte nos 3 primeiros segundos.'
+    : 'Divida em cenas de 10 a 25 segundos. A primeira cena é um gancho.';
 }
 
 /** Ângulos de abertura sorteados a cada geração para o roteiro não repetir a mesma entrada. */
@@ -57,25 +61,30 @@ export function promptRoteiro(p: {
   tema: string;
   publico: string;
   idioma: Idioma;
+  blocoSegundos: number;
 }): string {
-  return `Escreva o roteiro de um DOCUMENTÁRIO para o vídeo "${p.titulo}", com duração total de ${p.duracaoMinutos} minuto(s), em ${nomeDoIdioma(p.idioma)}, em tom de conversa, suave e bem explicado.
+  return `Escreva o PRIMEIRO BLOCO do roteiro de um DOCUMENTÁRIO para o vídeo "${p.titulo}", em ${nomeDoIdioma(p.idioma)}, em tom de conversa, suave e bem explicado.
+O vídeo completo terá ${p.duracaoMinutos} minuto(s) (${p.duracaoMinutos * 60} s). Este primeiro bloco será continuado em blocos seguintes: escreva apenas a abertura, a contextualização e o início do desenvolvimento, somando aproximadamente ${p.blocoSegundos} segundos.
 Tema e contexto: ${p.tema || 'o do título'}. Público: ${p.publico || 'geral'}.
 ${regrasFormato(p.formato)}
-A soma das durações das cenas deve ficar próxima de ${p.duracaoMinutos * 60} segundos.
+A soma das durações deste bloco deve ficar próxima de ${p.blocoSegundos} segundos.
 
-ESTRUTURA DOCUMENTAL OBRIGATÓRIA (o conjunto das cenas deve seguir esta ordem):
+ESTRUTURA DOCUMENTAL DO VÍDEO COMPLETO (neste bloco, faça apenas os itens 1 a 3):
 1. Abertura com uma pergunta instigante ou um fato surpreendente e específico.
 2. Contextualização do assunto (onde, quando, por que importa).
 3. Desenvolvimento organizado por tópicos, cada tópico com explicações detalhadas.
 4. Curiosidades relevantes, sempre verificáveis.
 5. Informações históricas, geográficas ou científicas que possam ser conferidas.
 6. Transições naturais entre os assuntos (nada de "agora vamos falar de...").
-7. Conclusão que retome os pontos principais sem repetir frases inteiras.
+
+FECHAMENTO — NÃO ESCREVA NESTE BLOCO:
+- Este NÃO é o fim do vídeo. A conclusão e a chamada para inscrição são escritas separadamente, na última etapa da geração.
+- NÃO escreva conclusão, despedida, agradecimento nem chamada para inscrição. Evite expressões como "inscreva-se no canal", "se inscrever", "deixe seu like", "até o próximo vídeo".
+- Se as cenas acabarem antes da duração do bloco, pare no meio do desenvolvimento e deixe o assunto em aberto: o próximo bloco continua de onde você parou.
 
 QUALIDADE EDITORIAL:
 - Não repita ideias, dados ou frases entre cenas.
 - Evite frases genéricas ("é importante ressaltar", "como todos sabem") e introduções longas.
-- Evite conclusões repetitivas.
 - NÃO invente informações, números, datas, nomes ou citações para aumentar a duração.
 - Quando um dado for incerto, escreva de forma compatível com o que é comprovado.
 - Linguagem natural, própria para narração: frases curtas, sem emojis e sem marcações.
@@ -99,6 +108,103 @@ Regras obrigatórias para a primeira cena:
 - Se este roteiro for gerado de novo, a primeira frase precisa ser diferente da versão anterior.
 
 Responda somente em JSON:
+{"cenas": [{"textoNarrado": string, "duracaoSegundos": number, "descricaoVisual": string, "movimentoCamera": string}], "fontes": [{"titulo": string, "autor": string, "ano": string, "url": string}]}`;
+}
+
+/**
+ * Continuação do roteiro, usada quando a primeira geração não chega a 90% da
+ * duração alvo. Pede só cenas novas, retomando da última, sem repetir o que
+ * já foi escrito.
+ */
+export function promptContinuarRoteiro(p: {
+  titulo: string;
+  duracaoMinutos: number;
+  formato: Formato;
+  tema: string;
+  publico: string;
+  idioma: Idioma;
+  totalSegundos: number;
+  alvoSegundos: number;
+  blocoSegundos: number;
+  cenas: { numero: number; textoNarrado: string; duracaoSegundos: number }[];
+}): string {
+  const [min, max] = LIMITES_FORMATO[p.formato].cena;
+  const quantidade = Math.max(3, Math.round(p.blocoSegundos / ((min + max) / 2)));
+  const jaEscrito = p.cenas
+    .map(
+      (c) =>
+        `${c.numero}. (${c.duracaoSegundos} s) ${c.textoNarrado.replace(/\s+/g, ' ').slice(0, 110)}`,
+    )
+    .join('\n');
+  const ultima = p.cenas[p.cenas.length - 1];
+  return `Continue o roteiro de um DOCUMENTÁRIO para o vídeo "${p.titulo}", em ${nomeDoIdioma(p.idioma)}, em tom de conversa, suave e bem explicado.
+O vídeo tem duração alvo de ${p.duracaoMinutos} minuto(s) (${p.alvoSegundos} s). Já foram escritas ${p.cenas.length} cena(s), somando ${formatarTempo(p.totalSegundos)}.
+Tema e contexto: ${p.tema || 'o do título'}. Público: ${p.publico || 'geral'}.
+
+O que já foi narrado — NÃO repita nenhuma destas ideias, dados, exemplos ou frases:
+${jaEscrito}
+
+Última cena escrita (continue naturalmente a partir dela): "${ultima?.textoNarrado ?? ''}"
+
+Agora acrescente APENAS cenas novas, na sequência, somando aproximadamente ${p.blocoSegundos} segundos:
+- Cerca de ${quantidade} cenas, cada uma com ${min} a ${max} segundos.
+- Este NÃO é o último bloco: avance no desenvolvimento e NÃO escreva conclusão, despedida nem chamada para inscrição ("inscreva-se", "se inscrever", "deixe seu like", "até o próximo vídeo"). O fechamento é escrito separadamente, ao final.
+- Não escreva abertura nem saudação: o gancho já foi feito na primeira cena.
+- Mantenha a estrutura documental (contexto, desenvolvimento por tópicos, curiosidades verificáveis, transições naturais).
+- NÃO invente informações, números, datas, nomes, citações ou fontes para aumentar a duração.
+- Linguagem natural, própria para narração: frases curtas, sem emojis e sem marcações.
+- "movimentoCamera" deve ser um destes: "zoom-in", "zoom-out", "panoramica-esquerda", "panoramica-direita", "panoramica-cima", "panoramica-baixo", "nenhum". Varie e evite movimentos exagerados.
+- A descrição visual diz o que aparece na tela, nomeia as pessoas, povos ou personagens e a ação deles, sem texto nem letras na imagem.
+
+Responda somente em JSON, com as cenas NOVAS (não repita as anteriores):
+{"cenas": [{"textoNarrado": string, "duracaoSegundos": number, "descricaoVisual": string, "movimentoCamera": string}], "fontes": [{"titulo": string, "autor": string, "ano": string, "url": string}]}`;
+}
+
+/**
+ * Fechamento do roteiro. É sempre a última chamada da geração: retoma os
+ * pontos principais e só aqui a chamada para inscrição é permitida. Assim o
+ * encerramento nunca aparece no meio do vídeo.
+ */
+export function promptFechamentoRoteiro(p: {
+  titulo: string;
+  formato: Formato;
+  tema: string;
+  publico: string;
+  idioma: Idioma;
+  totalSegundos: number;
+  alvoSegundos: number;
+  blocoSegundos: number;
+  cenas: { numero: number; textoNarrado: string; duracaoSegundos: number }[];
+}): string {
+  const [min, max] = LIMITES_FORMATO[p.formato].cena;
+  const finais = p.cenas
+    .slice(-8)
+    .map(
+      (c) =>
+        `${c.numero}. (${c.duracaoSegundos} s) ${c.textoNarrado.replace(/\s+/g, ' ').slice(0, 110)}`,
+    )
+    .join('\n');
+  const ultima = p.cenas[p.cenas.length - 1];
+  return `Você vai escrever o FECHAMENTO do roteiro de um DOCUMENTÁRIO para o vídeo "${p.titulo}", em ${nomeDoIdioma(p.idioma)}, em tom de conversa, suave e bem explicado.
+O vídeo tem duração alvo de ${formatarTempo(p.alvoSegundos)} e já foram escritas ${p.cenas.length} cena(s), somando ${formatarTempo(p.totalSegundos)}.
+Tema e contexto: ${p.tema || 'o do título'}. Público: ${p.publico || 'geral'}.
+
+O que já foi narrado no final — NÃO repita ideias, dados, exemplos ou frases:
+${finais}
+
+Última cena escrita (continue naturalmente a partir dela): "${ultima?.textoNarrado ?? ''}"
+
+Agora escreva as cenas FINAIS, somando aproximadamente ${p.blocoSegundos} segundos:
+- 1 ou 2 cenas, cada uma com ${min} a ${max} segundos.
+- Feche o documentário retomando os pontos principais, sem repetir frases inteiras.
+- A última cena termina convidando o espectador a se inscrever no canal.
+- Não escreva abertura nem saudação: o gancho já foi feito na primeira cena.
+- NÃO invente informações, números, datas, nomes, citações ou fontes.
+- Linguagem natural, própria para narração: frases curtas, sem emojis e sem marcações.
+- "movimentoCamera" deve ser um destes: "zoom-in", "zoom-out", "panoramica-esquerda", "panoramica-direita", "panoramica-cima", "panoramica-baixo", "nenhum". Varie e evite movimentos exagerados.
+- A descrição visual diz o que aparece na tela, nomeia as pessoas, povos ou personagens e a ação deles, sem texto nem letras na imagem.
+
+Responda somente em JSON, com as cenas NOVAS (não repita as anteriores):
 {"cenas": [{"textoNarrado": string, "duracaoSegundos": number, "descricaoVisual": string, "movimentoCamera": string}], "fontes": [{"titulo": string, "autor": string, "ano": string, "url": string}]}`;
 }
 
@@ -250,9 +356,29 @@ Estilo fixo do vídeo: ${p.estiloVisual}
 Sem texto, letras ou logotipos na imagem. Composição limpa, com o assunto principal no centro.`;
 }
 
-export function promptTags(p: { titulo: string; roteiro: string; idioma: Idioma }): string {
-  return `Gere de 15 a 25 tags para o vídeo "${p.titulo}" com base neste roteiro: ${p.roteiro}.
-As tags devem estar em ${nomeDoIdioma(p.idioma)}, ordenadas da mais ampla para a mais específica. O total, contando as vírgulas entre elas, não pode passar de 500 caracteres.
+export function promptTags(p: {
+  titulo: string;
+  tema: string;
+  roteiro: string;
+  idioma: Idioma;
+}): string {
+  return `Gere de ${MIN_TAGS} a ${MAX_TAGS} tags de SEO para o vídeo "${p.titulo}" com base neste roteiro: ${p.roteiro}
+Tema e contexto: ${p.tema || 'o do título'}.
+Escreva as tags em ${nomeDoIdioma(p.idioma)}.
+
+Monte a lista nesta ordem, da mais ampla para a mais específica:
+1. De 6 a 7 tags amplas: assunto principal, nicho e termos gerais que as pessoas digitam para encontrar o tema.
+2. De 8 a 10 tags médias: subtemas, pessoas, lugares, empresas e conceitos citados no roteiro.
+3. De 6 a 8 tags específicas (long tail): variações de busca e perguntas, como "como ...", "o que é ...", "... vale a pena", "... para iniciantes".
+
+Regras obrigatórias:
+- O total, contando as vírgulas entre as tags, NÃO pode passar de ${MAX_CARACTERES_TAGS} caracteres. Para caber de ${MIN_TAGS} a ${MAX_TAGS} tags, use tags curtas (em média até 18 caracteres).
+- Inclua o termo principal do título em pelo menos uma tag.
+- Varie sinônimos e formas de busca; não repita a mesma palavra ou expressão em várias tags.
+- Use tags que descrevem realmente o conteúdo do roteiro; não invente pessoas, lugares ou assuntos que não aparecem nele.
+- Não use "#", emojis, aspas, ponto final nem vírgula dentro da tag.
+- Evite tags genéricas ou enganosas ("vídeo", "youtube", "canal", "grátis", "top 10") que não identificam este vídeo.
+
 Responda somente em JSON: ["tag 1", "tag 2"]`;
 }
 
@@ -273,6 +399,7 @@ export function promptDescricao(p: {
   roteiro: string;
   idioma: Idioma;
   cenas: { tempo: string; resumo: string }[];
+  ancoras: string[];
 }): string {
   const tempos = p.cenas.map((c) => `${c.tempo} - ${c.resumo}`).join('\n');
   return `Escreva a descrição do vídeo "${p.titulo}" em ${nomeDoIdioma(p.idioma)}.
@@ -280,10 +407,13 @@ Contexto do vídeo: ${p.roteiro}
 Cenas e o tempo em que cada uma começa:
 ${tempos}
 
+Âncoras dos capítulos (a cada ~${Math.round(INTERVALO_CAPITULO_SEGUNDOS / 60)} minutos, cobrindo o vídeo do começo ao fim):
+${p.ancoras.join(', ')}
+
 Regras:
 - "gancho": exatamente 2 linhas curtas que despertam curiosidade.
 - "resumo": um parágrafo resumindo o conteúdo.
-- "capitulos": de 5 a 12 capítulos. Use SOMENTE tempos da lista de cenas acima, escritos exatamente como aparecem; o primeiro tem de ser 00:00 e dois capítulos seguidos precisam ter pelo menos 10 segundos de diferença. Títulos curtos.
+- "capitulos": exatamente ${p.ancoras.length} capítulos, um para CADA âncora acima, na mesma ordem e com o tempo escrito exatamente como aparece. Não pule, não acrescente e não invente tempos. O título deve resumir o trecho que COMEÇA naquele tempo, em até 5 palavras; não repita o título do vídeo.
 - "chamadaInscricao": uma frase convidando a se inscrever no canal.
 - "hashtags": de 3 a 5, começando com #.
 Responda somente em JSON: {"gancho": string, "resumo": string, "chamadaInscricao": string, "hashtags": [string], "capitulos": [{"tempo": string, "titulo": string}]}`;

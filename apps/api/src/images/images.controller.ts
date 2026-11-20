@@ -29,6 +29,15 @@ export class ImagesController {
     });
   }
 
+  @Get('projects/:id/images/prompt-criar-img.md')
+  async promptImg(@Param('id') id: string) {
+    const { nome, markdown } = await this.images.promptImgMarkdown(id);
+    return new StreamableFile(Buffer.from(markdown, 'utf8'), {
+      type: 'text/markdown; charset=utf-8',
+      disposition: `attachment; filename="${nome}"`,
+    });
+  }
+
   @Post('projects/:id/images/verify')
   verify(@Param('id') id: string) {
     return this.images.verify(id);

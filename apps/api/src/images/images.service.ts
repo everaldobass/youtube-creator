@@ -184,6 +184,42 @@ export class ImagesService implements OnModuleInit {
     return { nome: `${base}-prompts-imagens.md`, markdown: linhas.join('\n') + '\n' };
   }
 
+  /**
+   * Documento enxuto para gerar as imagens fora do app, no formato:
+   * cabeçalho com proporção/estilo e blocos de 10 cenas com "Arquivo sugerido"
+   * e "Descrição visual" de cada cena.
+   */
+  async promptImgMarkdown(projectId: string): Promise<{ nome: string; markdown: string }> {
+    const project = await this.projects.get(projectId);
+    const rows = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const linhas = [
+      'Observação: Criar as imagens e renomear referente a cena que ela pertence.',
+      `Proporção: ${proporcaoDe(project)}`,
+      `Estilo visual: ${project.estiloVisual.trim() || 'não definido'}`,
+    ];
+    if (rows.length === 0) {
+      linhas.push('', '_Ainda não há cenas. Gere o roteiro antes de exportar os prompts._');
+      return { nome: 'prompt-criar_img.md', markdown: linhas.join('\n') + '\n' };
+    }
+
+    const TAMANHO_BLOCO = 10;
+    for (let inicio = 0; inicio < rows.length; inicio += TAMANHO_BLOCO) {
+      const bloco = rows.slice(inicio, inicio + TAMANHO_BLOCO);
+      const primeiro = bloco[0].numero;
+      const ultimo = bloco[bloco.length - 1].numero;
+      linhas.push('', primeiro === ultimo ? `Cena ${primeiro}` : `Cenas ${primeiro} a ${ultimo}`);
+      bloco.forEach((cena, i) => {
+        if (i > 0) linhas.push('');
+        const numero = String(cena.numero).padStart(3, '0');
+        linhas.push(
+          `Arquivo sugerido: cena-${numero}.png`,
+          `Descrição visual: ${cena.descricaoVisual.trim()}`,
+        );
+      });
+    }
+    return { nome: 'prompt-criar_img.md', markdown: linhas.join('\n') + '\n' };
+  }
+
   async updateStyle(projectId: string, estiloVisual: string): Promise<ImagesResponse> {
     const antigo = await this.projects.get(projectId);
     if (antigo.estiloVisual !== estiloVisual) {

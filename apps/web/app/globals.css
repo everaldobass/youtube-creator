@@ -3,44 +3,68 @@
 @tailwind utilities;
 
 @layer base {
-  /* Tema escuro é o padrão (classe "dark" no <html>). */
+  /*
+   * Tema escuro único ("Studio Red Stream"). O vermelho da marca é reservado
+   * para marca e ação primária; perigo/erro têm um tom e uma superfície
+   * próprios, para "salvar" e "apagar" nunca se confundirem.
+   */
   :root {
-    --background: 220 35% 7%;        /* #0B0F17 */
-    --panel: 221 39% 11%;            /* #111827 */
-    --card: 217 33% 17%;             /* #1E293B */
-    --card-foreground: 210 20% 98%;  /* #F9FAFB */
-    --border: 215 19% 27%;           /* #374151 */
-    --foreground: 210 20% 98%;       /* #F9FAFB */
+    --background: 220 35% 7%; /* #0B0F17 */
+    --panel: 221 39% 11%; /* #111827 */
+    --card: 217 33% 17%; /* #1E293B */
+    --card-raised: 217 30% 21%; /* #273449 */
+    --card-foreground: 210 20% 98%; /* #F9FAFB */
+    --border: 215 19% 27%; /* #374151 */
+    --border-soft: 217 24% 20%; /* #273244 */
+    --foreground: 210 20% 98%; /* #F9FAFB */
     --muted-foreground: 218 11% 65%; /* #9CA3AF */
-    --primary: 0 84% 60%;            /* #EF4444 */
-    --primary-hover: 0 72% 51%;      /* #DC2626 */
+
+    /* Vermelho de ação: #DC2626 sobre branco = 4,8:1 (AA para 14 px). */
+    --primary: 0 72% 51%;
+    --primary-hover: 0 74% 42%; /* #B91C1C */
     --primary-foreground: 0 0% 100%;
-    --ai: 258 90% 66%;               /* #8B5CF6 */
-    --ai-hover: 262 83% 58%;         /* #7C3AED */
-    --success: 142 71% 45%;          /* #22C55E */
-    --warning: 38 92% 50%;           /* #F59E0B */
+    --brand: 0 84% 60%; /* #EF4444 — marca, etapa atual, destaques */
+    --brand-soft: 0 91% 71%; /* #F87171 */
+
+    /* Roxo de IA: #7C3AED sobre branco = 5,7:1. */
+    --ai: 262 83% 58%;
+    --ai-hover: 263 70% 50%; /* #6D28D9 */
+    --ai-soft: 255 92% 76%; /* #A78BFA */
+
+    --success: 142 71% 45%; /* #22C55E */
+    --success-soft: 142 69% 75%; /* #86EFAC */
+    --warning: 38 92% 50%; /* #F59E0B */
+    --warning-soft: 43 96% 72%; /* #FCD34D */
+    --danger: 0 91% 71%; /* #F87171 — texto/ícone semântico */
+    --danger-strong: 0 74% 50%; /* #DC2626 — apenas preenchimento com ícone */
+    --info: 213 94% 68%; /* #60A5FA */
+
     --ring: 0 84% 60%;
-    --radius: 0.5rem;                /* 8px: botões, campos, badges */
+    --radius: 0.5rem; /* 8px: botões, campos, badges */
+    --radius-card: 0.75rem; /* 12px: cards */
   }
 
-  /* Tema claro opcional (ajustar quando houver telas claras no Stitch). */
-  :root:not(.dark) {
-    --background: 210 40% 98%;
-    --panel: 0 0% 100%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --border: 214 32% 91%;
-    --foreground: 222 47% 11%;
-    --muted-foreground: 215 16% 47%;
+  * {
+    @apply border-border;
   }
 
-  * { @apply border-border; }
+  html {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     /* Números são o conteúdo aqui (durações, cenas, contagens): mesma largura em toda a interface. */
     font-variant-numeric: tabular-nums;
   }
-  :focus-visible { @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background; }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.32);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -48,52 +72,106 @@
    A duração é definida inline, igual à duração do áudio de cada cena.
 --------------------------------------------------------------------------- */
 @keyframes kb-zoom-in {
-  from { transform: scale(1.02); }
-  to { transform: scale(1.16); }
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.16);
+  }
 }
 @keyframes kb-zoom-out {
-  from { transform: scale(1.16); }
-  to { transform: scale(1.02); }
+  from {
+    transform: scale(1.16);
+  }
+  to {
+    transform: scale(1.02);
+  }
 }
 @keyframes kb-pan-esquerda {
-  from { transform: scale(1.2) translateX(6%); }
-  to { transform: scale(1.2) translateX(-6%); }
+  from {
+    transform: scale(1.2) translateX(6%);
+  }
+  to {
+    transform: scale(1.2) translateX(-6%);
+  }
 }
 @keyframes kb-pan-direita {
-  from { transform: scale(1.2) translateX(-6%); }
-  to { transform: scale(1.2) translateX(6%); }
+  from {
+    transform: scale(1.2) translateX(-6%);
+  }
+  to {
+    transform: scale(1.2) translateX(6%);
+  }
 }
 @keyframes kb-pan-cima {
-  from { transform: scale(1.2) translateY(6%); }
-  to { transform: scale(1.2) translateY(-6%); }
+  from {
+    transform: scale(1.2) translateY(6%);
+  }
+  to {
+    transform: scale(1.2) translateY(-6%);
+  }
 }
 @keyframes kb-pan-baixo {
-  from { transform: scale(1.2) translateY(-6%); }
-  to { transform: scale(1.2) translateY(6%); }
+  from {
+    transform: scale(1.2) translateY(-6%);
+  }
+  to {
+    transform: scale(1.2) translateY(6%);
+  }
 }
 @keyframes kb-rotacao {
-  from { transform: scale(1.22) rotate(-1.4deg); }
-  to { transform: scale(1.22) rotate(1.4deg); }
+  from {
+    transform: scale(1.22) rotate(-1.4deg);
+  }
+  to {
+    transform: scale(1.22) rotate(1.4deg);
+  }
 }
 @keyframes kb-tridimensional {
-  from { transform: scale(1.06) translate3d(3%, 2%, 0) rotate(-0.5deg); }
-  to { transform: scale(1.2) translate3d(-3%, -2%, 0) rotate(0.5deg); }
+  from {
+    transform: scale(1.06) translate3d(3%, 2%, 0) rotate(-0.5deg);
+  }
+  to {
+    transform: scale(1.2) translate3d(-3%, -2%, 0) rotate(0.5deg);
+  }
 }
 
-.kb-zoom-in, .kb-zoom-out, .kb-pan-esquerda, .kb-pan-direita,
-.kb-pan-cima, .kb-pan-baixo, .kb-rotacao, .kb-tridimensional {
+.kb-zoom-in,
+.kb-zoom-out,
+.kb-pan-esquerda,
+.kb-pan-direita,
+.kb-pan-cima,
+.kb-pan-baixo,
+.kb-rotacao,
+.kb-tridimensional {
   animation-timing-function: linear;
   animation-fill-mode: both;
   will-change: transform;
 }
-.kb-zoom-in { animation-name: kb-zoom-in; }
-.kb-zoom-out { animation-name: kb-zoom-out; }
-.kb-pan-esquerda { animation-name: kb-pan-esquerda; }
-.kb-pan-direita { animation-name: kb-pan-direita; }
-.kb-pan-cima { animation-name: kb-pan-cima; }
-.kb-pan-baixo { animation-name: kb-pan-baixo; }
-.kb-rotacao { animation-name: kb-rotacao; }
-.kb-tridimensional { animation-name: kb-tridimensional; }
+.kb-zoom-in {
+  animation-name: kb-zoom-in;
+}
+.kb-zoom-out {
+  animation-name: kb-zoom-out;
+}
+.kb-pan-esquerda {
+  animation-name: kb-pan-esquerda;
+}
+.kb-pan-direita {
+  animation-name: kb-pan-direita;
+}
+.kb-pan-cima {
+  animation-name: kb-pan-cima;
+}
+.kb-pan-baixo {
+  animation-name: kb-pan-baixo;
+}
+.kb-rotacao {
+  animation-name: kb-rotacao;
+}
+.kb-tridimensional {
+  animation-name: kb-tridimensional;
+}
 
 /* Demonstração em loop no seletor de efeito. */
 .kb-preview {
@@ -118,6 +196,21 @@
   letter-spacing: 0.01em;
 }
 
+/* Movimento de entrada de diálogos e avisos. */
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-surgir {
+  animation: surgir 160ms ease-out;
+}
+
 /* Movimento é decoração aqui: quem pediu menos animação no sistema recebe a prévia parada. */
 @media (prefers-reduced-motion: reduce) {
   .kb-zoom-in,
@@ -130,5 +223,8 @@
   .kb-tridimensional {
     animation: none !important;
     transform: scale(1.02);
+  }
+  .animate-surgir {
+    animation: none !important;
   }
 }

@@ -9,13 +9,10 @@ import {
 import { AiService } from '../ai/ai.service';
 import { promptVisualAsset } from '../ai/prompts';
 import { JobsService } from '../jobs/jobs.service';
-import { extDaChave, MIME_PARA_EXT } from '../media/files';
+import { chaveVisual, extDaChave, MIME_PARA_EXT } from '../media/files';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { STORAGE_DRIVER, StorageDriver } from '../storage/storage.service';
-
-const chaveVisual = (projectId: string, assetId: string, ext: string) =>
-  `projects/${projectId}/visual/${assetId}-${Date.now()}.${ext}`;
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 

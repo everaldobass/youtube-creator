@@ -6,6 +6,8 @@ import {
   Camera,
   Copy,
   Download,
+  FileDown,
+  FolderUp,
   ImageIcon,
   ScanSearch,
   Upload,
@@ -27,6 +29,36 @@ import { cn } from '@/lib/utils';
 
 const MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
+/** Número da cena a partir do nome: "cena-001.png_057e23b3.jpg" → 1. */
+function numeroDaCena(nome: string): number | null {
+  const comPrefixo = nome.match(/(?:^|[^\d])cena[\s_-]*0*(\d{1,3})(?=\D|$)/i);
+  if (comPrefixo) return Number(comPrefixo[1]);
+  // Aceita também "001.png"; evita confundir hash tipo "057e23b3.jpg" com cena.
+  const noInicio = nome.match(/^0*(\d{1,3})\.(?:png|jpe?g|webp)$/i);
+  return noInicio ? Number(noInicio[1]) : null;
+}
+
+/** Tipo da imagem mesmo quando o navegador não informa (pasta do sistema). */
+function mimeDaImagem(arquivo: File): (typeof MIMES)[number] | null {
+  if (MIMES.includes(arquivo.type as (typeof MIMES)[number])) {
+    return arquivo.type as (typeof MIMES)[number];
+  }
+  const ext = arquivo.name.toLowerCase().split('.').pop();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  return null;
+}
+
+function lerComoDataUrl(arquivo: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result));
+    leitor.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+    leitor.readAsDataURL(arquivo);
+  });
+}
+
 export function ImagensView({
   projectId,
   initial,
@@ -43,8 +75,18 @@ export function ImagensView({
   const [enviando, setEnviando] = useState(false);
   const [copiado, setCopiado] = useState<string | null>(null);
   const [continuando, setContinuando] = useState(false);
+  const [subindoPasta, setSubindoPasta] = useState(false);
+  const [progressoPasta, setProgressoPasta] = useState<{ atual: number; total: number } | null>(
+    null,
+  );
+  const [resultadoPasta, setResultadoPasta] = useState<{
+    enviados: number;
+    total: number;
+    problemas: string[];
+  } | null>(null);
   const uploadAlvo = useRef<string | null>(null);
   const inputArquivo = useRef<HTMLInputElement>(null);
+  const inputPasta = useRef<HTMLInputElement>(null);
 
   const ativos = jobsAtivos(data.jobs);
   const carregar = useCallback(async () => {
@@ -94,12 +136,13 @@ export function ImagensView({
     inputArquivo.current?.click();
   }
 
-  function aoSelecionarArquivo(e: React.ChangeEvent<HTMLInputElement>) {
+  async function aoSelecionarArquivo(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
     const sceneId = uploadAlvo.current;
     e.target.value = '';
     if (!arquivo || !sceneId) return;
-    if (!MIMES.includes(arquivo.type as (typeof MIMES)[number])) {
+    const mime = mimeDaImagem(arquivo);
+    if (!mime) {
       setErro('Use uma imagem PNG, JPG ou WebP.');
       return;
     }
@@ -107,15 +150,82 @@ export function ImagensView({
       setErro('A imagem passa de 10 MB.');
       return;
     }
-    const leitor = new FileReader();
-    leitor.onload = () =>
-      executar(() =>
-        post<ImagesResponse>(`/scenes/${sceneId}/image/upload`, {
-          base64: String(leitor.result),
-          mime: arquivo.type,
-        }),
+    try {
+      const base64 = await lerComoDataUrl(arquivo);
+      await executar(() =>
+        post<ImagesResponse>(`/scenes/${sceneId}/image/upload`, { base64, mime }),
       );
-    leitor.readAsDataURL(arquivo);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível ler a imagem.');
+    }
+  }
+
+  function abrirPasta() {
+    setErro(null);
+    setResultadoPasta(null);
+    inputPasta.current?.click();
+  }
+
+  async function aoSelecionarPasta(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivos = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (arquivos.length === 0) return;
+
+    setErro(null);
+    setResultadoPasta(null);
+    setSubindoPasta(true);
+    setProgressoPasta({ atual: 0, total: arquivos.length });
+
+    const porNumero = new Map(data.scenes.map((s) => [s.numero, s.id]));
+    const usadas = new Set<number>();
+    const problemas: string[] = [];
+    let enviados = 0;
+
+    try {
+      for (let i = 0; i < arquivos.length; i++) {
+        const arquivo = arquivos[i];
+        setProgressoPasta({ atual: i + 1, total: arquivos.length });
+
+        const mime = mimeDaImagem(arquivo);
+        if (!mime) {
+          problemas.push(`${arquivo.name}: formato não aceito (use PNG, JPG ou WebP).`);
+          continue;
+        }
+        if (arquivo.size > 10 * 1024 * 1024) {
+          problemas.push(`${arquivo.name}: passa de 10 MB.`);
+          continue;
+        }
+        const numero = numeroDaCena(arquivo.name);
+        const sceneId = numero === null ? undefined : porNumero.get(numero);
+        if (numero === null || !sceneId) {
+          problemas.push(`${arquivo.name}: não encontrei a cena pelo número do nome.`);
+          continue;
+        }
+        if (usadas.has(numero)) {
+          problemas.push(`${arquivo.name}: a cena ${numero} já recebeu outra imagem nesta pasta.`);
+          continue;
+        }
+        usadas.add(numero);
+
+        try {
+          const base64 = await lerComoDataUrl(arquivo);
+          await post<ImagesResponse>(`/scenes/${sceneId}/image/upload`, { base64, mime });
+          enviados += 1;
+        } catch (err) {
+          problemas.push(
+            `${arquivo.name}: ${err instanceof Error ? err.message : 'erro ao enviar.'}`,
+          );
+        }
+      }
+
+      setData(await apiFetch<ImagesResponse>(`/projects/${projectId}/images`));
+      setResultadoPasta({ enviados, total: arquivos.length, problemas });
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível subir a pasta.');
+    } finally {
+      setSubindoPasta(false);
+      setProgressoPasta(null);
+    }
   }
 
   async function continuar() {
@@ -133,11 +243,11 @@ export function ImagensView({
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 5 de 9"
         title={`Imagens e storyboard (${data.proporcao}, ${vertical ? 'vertical' : 'horizontal'})`}
-        description="Copie o prompt de cada cena, gere a imagem no Google Flow/Nano Banana e envie o arquivo no card correspondente. Aceita PNG, JPG ou WebP de até 10 MB."
+        description="Copie o prompt de cada cena, gere a imagem no Google Flow/Nano Banana e envie o arquivo no card correspondente. Aceita PNG, JPG ou WebP de até 10 MB. Para enviar todas de uma vez, selecione a pasta com arquivos nomeados como cena-001.png."
       />
 
       <Card className="mt-6 p-4">
@@ -187,11 +297,28 @@ export function ImagensView({
                 <ScanSearch className="size-3 animate-pulse" /> Verificação de imagens em andamento...
               </p>
             )}
+            {subindoPasta && progressoPasta && (
+              <p className="mt-2 flex items-center gap-1 text-xs text-ai-soft">
+                <Upload className="size-3 animate-pulse" /> Enviando imagens: {progressoPasta.atual}{' '}
+                de {progressoPasta.total}...
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              disabled={enviando || ativos.length > 0 || prontas === 0}
+              disabled={enviando || subindoPasta || ativos.length > 0}
+              onClick={abrirPasta}
+              title="Escolha a pasta; o número no nome do arquivo (cena-001...) define a cena."
+            >
+              <FolderUp className="size-4" />
+              {subindoPasta && progressoPasta
+                ? `Enviando ${progressoPasta.atual} de ${progressoPasta.total}...`
+                : 'Enviar pasta de imagens'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={enviando || subindoPasta || ativos.length > 0 || prontas === 0}
               onClick={() => executar(() => post<ImagesResponse>(`/projects/${projectId}/images/verify`))}
             >
               <ScanSearch className="size-4" /> Verificar correspondência
@@ -201,7 +328,33 @@ export function ImagensView({
                 <Download className="size-4" /> Exportar prompts (.md)
               </a>
             </Button>
+            <Button variant="outline" asChild>
+              <a
+                href={`${API_URL}/projects/${projectId}/images/prompt-criar-img.md`}
+                title="Lista simples, em blocos de 10 cenas, com arquivo sugerido e descrição visual."
+              >
+                <FileDown className="size-4" /> Exportar prompt IMG (.md)
+              </a>
+            </Button>
           </div>
+        </div>
+      )}
+
+      {resultadoPasta && (
+        <div className="mt-4 rounded-md border border-border-soft bg-panel p-3 text-xs">
+          <p className="font-medium">
+            {resultadoPasta.enviados} de {resultadoPasta.total} imagem(ns) enviada(s).
+          </p>
+          {resultadoPasta.problemas.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-warning">
+              {resultadoPasta.problemas.slice(0, 10).map((problema, i) => (
+                <li key={`${i}-${problema}`}>{problema}</li>
+              ))}
+              {resultadoPasta.problemas.length > 10 && (
+                <li>… e mais {resultadoPasta.problemas.length - 10} arquivo(s).</li>
+              )}
+            </ul>
+          )}
         </div>
       )}
 
@@ -210,6 +363,19 @@ export function ImagensView({
           <ErrorBox message={erro} />
         </div>
       )}
+
+      <input
+        ref={inputPasta}
+        type="file"
+        multiple
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        {...({
+          webkitdirectory: '',
+          directory: '',
+        } as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
+        onChange={aoSelecionarPasta}
+      />
 
       <input
         ref={inputArquivo}
@@ -244,7 +410,9 @@ export function ImagensView({
               </div>
               <div className="space-y-2 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Cena {s.numero}</span>
+                  <span className="rounded-md border border-border-soft bg-panel px-2 py-0.5 text-xs font-semibold tabular-nums">
+                    Cena {s.numero}
+                  </span>
                   <StatusBadge status={s.statusImagem} temArquivo={s.temImagem} />
                 </div>
                 <p className="line-clamp-2 text-xs text-muted-foreground">{s.descricaoVisual}</p>
@@ -270,7 +438,7 @@ export function ImagensView({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={enviando}
+                    disabled={enviando || subindoPasta}
                     onClick={() => escolherArquivo(s.id)}
                   >
                     <Upload className="size-4" /> Enviar imagem
@@ -285,8 +453,8 @@ export function ImagensView({
       <ActionBar
         voltarHref={`/projetos/${projectId}/narracao`}
         onContinuar={continuar}
-        continuarDisabled={!tudoPronto}
-        busy={continuando}
+        continuarDisabled={!tudoPronto || subindoPasta}
+        busy={continuando || subindoPasta}
         dica={tudoPronto ? undefined : 'Todas as cenas precisam de imagem'}
       />
     </div>

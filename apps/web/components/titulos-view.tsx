@@ -142,7 +142,7 @@ export function TitulosView({
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 2 de 9"
         title="5 alternativas de título"
@@ -182,7 +182,7 @@ export function TitulosView({
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p className="text-[11px] font-medium text-muted-foreground">
               Título ou ideia da etapa 1
             </p>
             <p className="mt-0.5 font-medium leading-snug">{ideiaHerdada}</p>
@@ -231,7 +231,8 @@ export function TitulosView({
 
       {titles.length > 0 && (
         <ul className={cn('mt-6 space-y-3', gerando && 'opacity-50')}>
-          <li className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <li className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+            <span className="h-px w-4 bg-border" aria-hidden />
             5 alternativas da IA
           </li>
           {titles.map((t) => {

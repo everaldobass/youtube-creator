@@ -81,7 +81,7 @@ export function EfeitoCameraCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
-            <Camera className="size-4 text-ai" /> Movimento de câmera nas imagens
+            <Camera className="size-4 text-ai-soft" /> Movimento de câmera nas imagens
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Zoom, panorâmica, rotação e deslocamento 3D dão vida às imagens paradas. O efeito vale para a
@@ -132,7 +132,7 @@ export function EfeitoCameraCard({
                 className={cn(
                   'rounded-md border px-2 py-2 text-left text-xs font-medium transition-colors disabled:opacity-60',
                   valor === e.slug
-                    ? 'border-primary bg-primary text-primary-foreground'
+                    ? 'border-brand bg-brand text-[#1a0505]'
                     : 'border-border bg-transparent hover:bg-panel',
                 )}
               >
@@ -150,7 +150,7 @@ export function EfeitoCameraCard({
               type="checkbox"
               checked={usarSugerida}
               onChange={(e) => alternarSugerida(e.target.checked)}
-              className="mt-0.5 size-4 accent-primary"
+              className="mt-0.5 size-4 accent-brand"
             />
             <span>
               Usar o movimento sugerido em cada cena

@@ -153,7 +153,7 @@ export function VisualAssetsCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
-            <Map className="size-4 text-ai" /> Mapas e linhas do tempo
+            <Map className="size-4 text-ai-soft" /> Mapas e linhas do tempo
           </h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
             Elementos explicativos para história, geografia e acontecimentos. A IA recebe o período
@@ -268,9 +268,9 @@ export function VisualAssetsCard({
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {a.tipo === 'mapa' ? (
-                      <Map className="size-4 text-ai" />
+                      <Map className="size-4 text-ai-soft" />
                     ) : (
-                      <Clock className="size-4 text-ai" />
+                      <Clock className="size-4 text-ai-soft" />
                     )}
                     <span className="text-sm font-semibold">{ROTULO_VISUAL[a.tipo]}</span>
                   </div>

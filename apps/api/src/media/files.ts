@@ -8,6 +8,8 @@ export const chaveThumb = (projectId: string, thumbId: string) =>
 export const chaveVideo = (projectId: string) => `projects/${projectId}/exports/video.mp4`;
 export const chaveMusica = (projectId: string, ext: string) =>
   `projects/${projectId}/music/musica-${Date.now()}.${ext}`;
+export const chaveVisual = (projectId: string, assetId: string, ext: string) =>
+  `projects/${projectId}/visual/${assetId}-${Date.now()}.${ext}`;
 
 export const MIME_PARA_EXT: Record<string, string> = {
   'image/png': 'png',

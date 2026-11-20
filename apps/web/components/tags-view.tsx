@@ -3,7 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Copy, Sparkles, X } from 'lucide-react';
-import { MAX_CARACTERES_TAGS, totalCaracteresTags, type TagsResponse } from '@yt/shared';
+import {
+  MAX_CARACTERES_TAGS,
+  MAX_TAGS,
+  MIN_TAGS,
+  totalCaracteresTags,
+  type TagsResponse,
+} from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
 import { StepHeader } from '@/components/step-header';
@@ -51,6 +57,10 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
       setNova('');
       return;
     }
+    if (tags.length >= MAX_TAGS) {
+      setErro(`O limite é de ${MAX_TAGS} tags. Remova uma antes de adicionar outra.`);
+      return;
+    }
     if (totalCaracteresTags([...tags, t]) > MAX_CARACTERES_TAGS) {
       setErro(`Essa tag passaria do limite de ${MAX_CARACTERES_TAGS} caracteres.`);
       return;
@@ -94,11 +104,11 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 6 de 9"
         title="Tags e otimização de SEO"
-        description={`De 15 a 25 tags, da mais ampla à mais específica, dentro do limite de ${MAX_CARACTERES_TAGS} caracteres do YouTube Studio.`}
+        description={`De ${MIN_TAGS} a ${MAX_TAGS} tags, da mais ampla à mais específica, dentro do limite de ${MAX_CARACTERES_TAGS} caracteres do YouTube Studio.`}
         actions={
           <Button variant="ai" onClick={gerar} disabled={gerando}>
             <Sparkles className="size-4" />
@@ -118,7 +128,7 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
           <p
             className={cn(
               'text-sm font-medium',
-              total > MAX_CARACTERES_TAGS ? 'text-primary' : perto ? 'text-warning' : '',
+              total > MAX_CARACTERES_TAGS ? 'text-danger' : perto ? 'text-warning' : '',
             )}
           >
             {total} de {MAX_CARACTERES_TAGS} caracteres · {tags.length} tags
@@ -136,8 +146,10 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
             style={{ width: `${percentual}%` }}
           />
         </div>
-        {tags.length !== 0 && (tags.length < 15 || tags.length > 25) && (
-          <p className="mt-2 text-xs text-warning">O recomendado é de 15 a 25 tags.</p>
+        {tags.length !== 0 && (tags.length < MIN_TAGS || tags.length > MAX_TAGS) && (
+          <p className="mt-2 text-xs text-warning">
+            O recomendado é de {MIN_TAGS} a {MAX_TAGS} tags.
+          </p>
         )}
 
         {tags.length > 0 ? (
@@ -150,7 +162,7 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
                     type="button"
                     aria-label={`Remover a tag ${t}`}
                     onClick={() => salvar(tags.filter((x) => x !== t))}
-                    className="rounded hover:text-primary"
+                    className="rounded p-0.5 transition-colors hover:bg-danger/10 hover:text-danger"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -174,7 +186,11 @@ export function TagsView({ projectId, initial }: { projectId: string; initial: T
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), adicionar())}
               placeholder="Digite e pressione Enter"
             />
-            <Button variant="outline" onClick={adicionar} disabled={!nova.trim()}>
+            <Button
+              variant="outline"
+              onClick={adicionar}
+              disabled={!nova.trim() || tags.length >= MAX_TAGS}
+            >
               Adicionar
             </Button>
           </div>

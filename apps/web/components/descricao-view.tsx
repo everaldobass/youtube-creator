@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Copy, Sparkles } from 'lucide-react';
-import type { DescriptionResponse } from '@yt/shared';
+import { INTERVALO_CAPITULO_SEGUNDOS, formatarTempo, type DescriptionResponse } from '@yt/shared';
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
 import { StepHeader } from '@/components/step-header';
@@ -85,13 +85,18 @@ export function DescricaoView({
     .split('\n')
     .filter((l) => l.trim())
     .slice(0, 2);
+  const intervaloMinutos = Math.round(INTERVALO_CAPITULO_SEGUNDOS / 60);
+  const narracaoCurta =
+    data.duracaoAlvoSegundos > 0 &&
+    data.duracaoSegundos > 0 &&
+    data.duracaoSegundos < data.duracaoAlvoSegundos * 0.9;
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 8 de 9"
         title="Descrição, capítulos e SEO"
-        description="Gancho nas 2 primeiras linhas, resumo, capítulos com os tempos reais das cenas, chamada para se inscrever e hashtags."
+        description={`Gancho nas 2 primeiras linhas, resumo, capítulos a cada ~${Math.round(INTERVALO_CAPITULO_SEGUNDOS / 60)} minutos com o tema de cada trecho, chamada para se inscrever e hashtags.`}
         actions={
           <Button variant="ai" onClick={gerar} disabled={gerando || !data.temRoteiro}>
             <Sparkles className="size-4" />
@@ -139,11 +144,23 @@ export function DescricaoView({
 
         <Card className="h-fit p-4">
           <h2 className="text-sm font-semibold">Capítulos</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.capitulos.length > 0
+              ? `${data.capitulos.length} capítulo${data.capitulos.length === 1 ? '' : 's'} a cada ~${intervaloMinutos} min · vídeo de ${formatarTempo(data.duracaoSegundos)}`
+              : `Um capítulo a cada ~${intervaloMinutos} min, pela duração real do vídeo.`}
+          </p>
+          {narracaoCurta && (
+            <p className="mt-2 text-xs text-warning">
+              A narração tem {formatarTempo(data.duracaoSegundos)}, abaixo dos{' '}
+              {formatarTempo(data.duracaoAlvoSegundos)} definidos no projeto. Os capítulos
+              acompanham a duração real do vídeo.
+            </p>
+          )}
           {data.capitulos.length > 0 ? (
             <ul className="mt-3 space-y-2 text-sm">
               {data.capitulos.map((c) => (
                 <li key={c.tempo} className="flex gap-3">
-                  <span className="font-mono text-ai">{c.tempo}</span>
+                  <span className="font-mono text-ai-soft">{c.tempo}</span>
                   <span>{c.titulo}</span>
                 </li>
               ))}

@@ -1,9 +1,8 @@
 import { cn } from '@/lib/utils';
 
 /**
- * Cabeçalho padrão das etapas do projeto: caixa alinhada ao conteúdo (1022 px),
- * com a posição na linha de produção, título e, opcionalmente, descrição e ações.
- * A régua de etapas é informação, não enfeite: mostra onde o vídeo está.
+ * Cabeçalho compacto das etapas: posição na produção, título, descrição e
+ * ações. A régua mostra onde o vídeo está sem reservar 150 px de altura.
  */
 export function StepHeader({
   etapa,
@@ -26,60 +25,62 @@ export function StepHeader({
   const atual = posicao ? Number(posicao[1]) : 0;
   const total = posicao ? Number(posicao[2]) : 0;
 
-  const cabecalho = (
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs tabular-nums text-muted-foreground">{etapa}</span>
-        {total > 0 && (
-          <span className="flex items-center gap-1" aria-hidden="true">
-            {Array.from({ length: total }).map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  'h-1 rounded-full',
-                  i + 1 === atual ? 'w-5 bg-primary' : 'w-2.5',
-                  i + 1 < atual && 'bg-primary/50',
-                  i + 1 > atual && 'bg-border',
-                )}
-              />
-            ))}
-          </span>
-        )}
-        {meta}
-      </div>
-      <h1 className="mt-2 text-[2rem] font-semibold leading-[1.15] tracking-[-0.02em]">{title}</h1>
-      {description && (
-        <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      )}
-    </div>
-  );
-
   return (
     <section
       className={cn(
-        'flex min-h-[150px] w-full items-center rounded-xl border border-border bg-panel px-6 py-4 sm:px-8',
+        'w-full rounded-xl border border-border-soft bg-gradient-to-b from-panel to-panel/60 px-4 py-4 sm:px-6 sm:py-5',
         className,
       )}
     >
-      {footer ? (
-        <div className="w-full">
-          {cabecalho}
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-            <div className="min-w-0">{footer}</div>
-            {actions && (
-              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0 max-w-[62ch]">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="inline-flex items-baseline gap-1.5 rounded-full border border-border-soft bg-card/70 px-2.5 py-0.5 text-[11px] font-medium">
+              <span className="text-foreground">Etapa {atual || '—'}</span>
+              {total > 0 && <span className="text-muted-foreground">de {total}</span>}
+            </span>
+            {total > 0 && (
+              <span className="flex items-center gap-1" aria-hidden="true">
+                {Array.from({ length: total }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      'h-1 rounded-full transition-all',
+                      i + 1 === atual
+                        ? 'w-5 bg-brand'
+                        : i + 1 < atual
+                          ? 'w-2.5 bg-brand/40'
+                          : 'w-2.5 bg-border',
+                    )}
+                  />
+                ))}
+              </span>
             )}
+            {meta}
           </div>
+
+          <h1 className="mt-2 text-[1.6rem] font-semibold leading-[1.15] tracking-[-0.025em] sm:text-[1.75rem]">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1.5 max-w-[62ch] text-[13px] leading-relaxed text-muted-foreground sm:text-sm">
+              {description}
+            </p>
+          )}
         </div>
-      ) : (
-        <div className="flex w-full flex-wrap items-center justify-between gap-6">
-          {cabecalho}
+
+        {actions && !footer && (
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
+            {actions}
+          </div>
+        )}
+      </div>
+
+      {footer && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border-soft pt-3">
+          <div className="min-w-0">{footer}</div>
           {actions && (
-            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {actions}
-            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>
           )}
         </div>
       )}

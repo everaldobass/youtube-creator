@@ -37,6 +37,7 @@ import {
 import { ActionBar } from '@/components/action-bar';
 import { ErrorBox } from '@/components/error-box';
 import { StepHeader } from '@/components/step-header';
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -132,7 +133,7 @@ function EditorialPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="size-4 text-ai" /> Revisão editorial
+            <ShieldCheck className="size-4 text-ai-soft" /> Revisão editorial
           </h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
             A IA confere precisão histórica, geográfica e científica, afirmações sem fonte,
@@ -295,7 +296,7 @@ function FontesCard({ fontes }: { fontes: FonteRoteiro[] }) {
   return (
     <Card className="mt-4 p-4">
       <h2 className="flex items-center gap-2 font-semibold">
-        <BookOpen className="size-4 text-ai" /> Referências do roteiro
+        <BookOpen className="size-4 text-ai-soft" /> Referências do roteiro
       </h2>
       {fontes.length ? (
         <>
@@ -353,6 +354,7 @@ export function RoteiroView({
   const [fontes, setFontes] = useState<FonteRoteiro[]>(initial.fontes);
   const [editorial, setEditorial] = useState<EditorialResponse>(initialEditorial);
   const [roteiroManual, setRoteiroManual] = useState(initial.roteiroManual);
+  const [avisos, setAvisos] = useState<string[]>(initial.avisos ?? []);
   const [ignorarEditorial, setIgnorarEditorial] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null); // 'gerar' | 'importar' | id da cena | 'estrutura'
   const [erro, setErro] = useState<string | null>(null);
@@ -369,6 +371,7 @@ export function RoteiroView({
     setResumo(r.resumo);
     setFontes(r.fontes);
     setRoteiroManual(r.roteiroManual);
+    setAvisos(r.avisos ?? []);
   }
 
   const recarregarRoteiro = useCallback(async () => {
@@ -543,7 +546,7 @@ export function RoteiroView({
       : undefined;
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 3 de 9"
         title="Roteiro dividido por cenas"
@@ -619,12 +622,31 @@ export function RoteiroView({
         }
       />
       {scenes.length > 0 && ocupado === 'gerar' && (
-        <p className="mt-2 text-sm text-warning">Gerar de novo substitui todas as cenas atuais.</p>
+        <p className="mt-2 text-sm text-warning">
+          Gerar de novo substitui todas as cenas atuais. Em vídeos longos, a IA continua
+          automaticamente até chegar a pelo menos 90% do tempo pedido.
+        </p>
       )}
 
       {erro && (
         <div className="mt-6">
           <ErrorBox message={erro} onRetry={scenes.length === 0 ? gerar : undefined} />
+        </div>
+      )}
+
+      {avisos.length > 0 && (
+        <div className="mt-4">
+          <Alert
+            variant="warning"
+            title="Roteiro gerado com avisos"
+            description={
+              <ul className="list-disc space-y-1 pl-4">
+                {avisos.map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
+            }
+          />
         </div>
       )}
 
@@ -689,38 +711,39 @@ export function RoteiroView({
       )}
 
       {scenes.length > 0 && (
-        <div className="sticky top-0 z-10 -mx-6 mt-6 border-b bg-background/95 px-6 py-3 backdrop-blur md:-mx-10 md:px-10">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+        <div className="mt-5 rounded-xl border border-border-soft bg-panel/60 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[13px]">
             <span>
-              <strong>{scenes.length}</strong> cenas
+              <strong className="tabular-nums">{scenes.length}</strong> cenas
             </span>
             <span>
-              Total <strong>{mmss(resumo.totalSegundos)}</strong> de {mmss(resumo.alvoSegundos)}
+              Total <strong className="tabular-nums">{mmss(resumo.totalSegundos)}</strong> de{' '}
+              {mmss(resumo.alvoSegundos)}
             </span>
             {roteiroManual && (
-              <span className="inline-flex items-center gap-1 text-xs text-ai">
+              <span className="inline-flex items-center gap-1 text-[11px] text-ai-soft">
                 <FileText className="size-3.5" aria-hidden />
                 roteiro manual
               </span>
             )}
-            <span className={resumo.dentroDaMargem ? 'text-success' : 'text-warning'}>
+            <span className={resumo.dentroDaMargem ? 'text-success-soft' : 'text-warning-soft'}>
               {resumo.dentroDaMargem
                 ? `Dentro da margem de 10% (${desvioTexto})`
                 : `Fora da margem de 10% (${desvioTexto})`}
             </span>
             {resumo.cenasForaDoLimite.length > 0 && (
-              <span className="text-warning">
+              <span className="text-warning-soft">
                 Cenas fora de {min} a {max} s: {resumo.cenasForaDoLimite.join(', ')}
               </span>
             )}
           </div>
-          <div className="mt-2 flex h-2 gap-0.5 overflow-hidden rounded-full" aria-hidden="true">
+          <div className="mt-2.5 flex h-2 gap-0.5 overflow-hidden rounded-full" aria-hidden="true">
             {scenes.map((s) => (
               <div
                 key={s.id}
                 className={cn(
                   'h-full',
-                  resumo.cenasForaDoLimite.includes(s.numero) ? 'bg-warning' : 'bg-primary',
+                  resumo.cenasForaDoLimite.includes(s.numero) ? 'bg-warning' : 'bg-brand/70',
                 )}
                 style={{ flexGrow: s.duracaoSegundos, flexBasis: 0 }}
                 title={`Cena ${s.numero}: ${s.duracaoSegundos} s`}
@@ -797,7 +820,9 @@ export function RoteiroView({
               <Card className={cn('p-4', refazendo && 'animate-pulse')}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">Cena {s.numero}</span>
+                    <span className="rounded-md border border-border-soft bg-panel px-2 py-0.5 text-xs font-semibold tabular-nums">
+                      Cena {s.numero}
+                    </span>
                     {i === 0 && <Badge variant="ai">Gancho</Badge>}
                     {i === scenes.length - 1 && scenes.length > 1 && (
                       <Badge variant="ai">Chamada para ação</Badge>

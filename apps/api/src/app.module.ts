@@ -20,6 +20,7 @@ import { EditorialModule } from './editorial/editorial.module';
 import { VisualAssetsModule } from './visual/visual-assets.module';
 import { QualityModule } from './quality/quality.module';
 import { SettingsModule } from './settings/settings.module';
+import { ImportModule } from './import/import.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SettingsModule } from './settings/settings.module';
     VisualAssetsModule,
     QualityModule,
     SettingsModule,
+    ImportModule,
   ],
   controllers: [HealthController],
 })

@@ -223,7 +223,7 @@ export function NarracaoView({
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 4 de 9"
         title="Narração por voz"
@@ -232,7 +232,7 @@ export function NarracaoView({
 
       <Card className="mt-6 p-4">
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex size-11 items-center justify-center rounded-full bg-ai/15 text-ai">
+          <div className="flex size-11 items-center justify-center rounded-full bg-ai/15 text-ai-soft">
             <Mic className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -257,7 +257,7 @@ export function NarracaoView({
               type="checkbox"
               checked={natural}
               onChange={(e) => alternarNatural(e.target.checked)}
-              className="mt-0.5 size-4 accent-primary"
+              className="mt-0.5 size-4 accent-brand"
             />
             <span>
               Narração mais humana (pausas e respiro)
@@ -291,7 +291,7 @@ export function NarracaoView({
               onPointerUp={salvarVelocidade}
               onKeyUp={salvarVelocidade}
               onBlur={salvarVelocidade}
-              className="mt-2 h-2 w-full cursor-pointer accent-primary"
+              className="mt-2 h-2 w-full cursor-pointer accent-brand"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               100% é o ritmo normal. Mudanças valem para a amostra e para as próximas narrações;
@@ -391,7 +391,9 @@ export function NarracaoView({
               <Card className={cn('p-4', gerando && 'animate-pulse')}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">Cena {s.numero}</span>
+                    <span className="rounded-md border border-border-soft bg-panel px-2 py-0.5 text-xs font-semibold tabular-nums">
+                      Cena {s.numero}
+                    </span>
                     <StatusBadge status={s.statusNarracao} temArquivo={s.temAudio} />
                     {gerando && (
                       <Badge variant="ai">

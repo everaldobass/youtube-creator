@@ -95,7 +95,7 @@ export function VideoView({
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 9 de 9"
         title={pronto ? 'Seu vídeo está pronto!' : 'Vídeo final e publicação'}
@@ -147,7 +147,7 @@ export function VideoView({
             )}
             <Button variant="outline" asChild>
               <a href={`${API_URL}/projects/${project.id}/export/zip`}>
-                <FileArchive className="size-4" /> Baixar ZIP
+                <FileArchive className="size-4" /> Baixar projeto (.zip)
               </a>
             </Button>
           </>
@@ -312,8 +312,10 @@ export function VideoView({
       <QualidadeCard projectId={project.id} />
 
       <p className="mt-6 text-xs text-muted-foreground">
-        O ZIP traz imagens, áudios, legendas .srt, tempos, thumbnails, título, tags, descrição e,
-        quando houver, a música de fundo com os créditos.
+        O ZIP traz imagens, áudios, versões de áudio, legendas .srt, tempos, thumbnails, elementos
+        visuais, música e um <code>projeto.json</code> com definições, roteiro, títulos, tags,
+        capítulos e revisão editorial. Importe o arquivo na tela inicial para continuar editando de
+        onde parou. Nenhuma chave de API vai no pacote.
       </p>
       <p className="mt-2 text-xs text-muted-foreground">
         Se o YouTube pedir, marque o vídeo como conteúdo alterado ou sintético ao publicar, e revise

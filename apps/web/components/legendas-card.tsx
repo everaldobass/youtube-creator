@@ -214,7 +214,7 @@ export function LegendasCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
-            <Captions className="size-4 text-ai" /> Legendas sincronizadas
+            <Captions className="size-4 text-ai-soft" /> Legendas sincronizadas
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             O texto da narração é queimado no vídeo dentro de uma caixa escura, no estilo escolhido,
@@ -293,7 +293,7 @@ export function LegendasCard({
               type="checkbox"
               checked={valor}
               onChange={(e) => alternar(e.target.checked)}
-              className="mt-0.5 size-4 accent-primary"
+              className="mt-0.5 size-4 accent-brand"
             />
             <span>
               Queimar legendas no vídeo final
@@ -321,7 +321,7 @@ export function LegendasCard({
               onPointerUp={salvarTamanho}
               onKeyUp={salvarTamanho}
               onBlur={salvarTamanho}
-              className="mt-2 h-2 w-full cursor-pointer accent-primary"
+              className="mt-2 h-2 w-full cursor-pointer accent-brand"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
               100% é o tamanho recomendado. Aumente para Shorts ou quando o texto for curto; diminua para

@@ -143,7 +143,7 @@ export function ThumbnailsView({
   }
 
   return (
-    <div className="mx-auto max-w-[1022px]">
+    <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 7 de 9"
         title="Thumbnails | Google Flow | CTR"

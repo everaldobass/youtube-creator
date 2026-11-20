@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   MAX_CARACTERES_TAGS,
+  MAX_TAGS,
   TagsResponse,
   tagsGenSchema,
   totalCaracteresTags,
@@ -43,14 +44,21 @@ export class TagsService {
     if (!roteiro) throw new BadRequestException('Gere o roteiro antes das tags.');
 
     const bruto = await this.ai.generateJson(
-      promptTags({ titulo: project.tituloEscolhido, roteiro, idioma: project.idioma }),
+      promptTags({
+        titulo: project.tituloEscolhido,
+        tema: project.tema,
+        roteiro,
+        idioma: project.idioma,
+      }),
       tagsGenSchema,
     );
 
-    // Limpa, tira repetidas e respeita o limite de 500 caracteres, mantendo a ordem (da mais ampla à mais específica).
+    // Limpa, tira repetidas, mantém no máximo 25 e respeita o limite de 500
+    // caracteres, preservando a ordem (da mais ampla à mais específica).
     const vistos = new Set<string>();
     const tags: string[] = [];
     for (const t of bruto) {
+      if (tags.length >= MAX_TAGS) break;
       const limpa = t.replace(/^#/, '').replace(/,/g, ' ').trim().slice(0, 100);
       const chave = limpa.toLowerCase();
       if (!limpa || vistos.has(chave)) continue;

@@ -8,8 +8,12 @@ import {
   ExportResponse,
   JobStatus,
   LegendaEstilo,
+  PROJETO_PACOTE_APP,
+  PROJETO_PACOTE_VERSAO,
+  ProjetoPacote,
   efeitoDaCena,
   formatarTempo,
+  projetoPacoteSchema,
   resolucaoDoFormato,
 } from '@yt/shared';
 import { JobsService } from '../jobs/jobs.service';
@@ -423,13 +427,56 @@ export class ExportService implements OnModuleInit {
     );
     const zip = archiver('zip', { zlib: { level: 6 } });
 
+    // Versões de áudio de todas as cenas, para o manifesto e para a pasta de versões.
+    const versoes = await this.prisma.sceneAudio.findMany({
+      where: { sceneId: { in: cenas.map((c) => c.id) } },
+      orderBy: { criadoEm: 'asc' },
+    });
+    const versoesPorCena = new Map<number, typeof versoes>();
+    for (const c of cenas) {
+      versoesPorCena.set(
+        c.numero,
+        versoes.filter((v) => v.sceneId === c.id),
+      );
+    }
+
     const tempos = [];
+    const cenasManifesto: ProjetoPacote['scenes'] = [];
     for (const c of cenas) {
       const item = linha[c.numero - 1];
       const imagem = c.imagemPath ? `imagens/cena-${pad(c.numero)}.${extDaChave(c.imagemPath)}` : null;
       const audio = c.audioPath ? `audios/cena-${pad(c.numero)}.wav` : null;
       if (imagem) zip.append(await this.storage.get(c.imagemPath!), { name: imagem });
       if (audio) zip.append(await this.storage.get(c.audioPath!), { name: audio });
+
+      // A versão atual já vai em `audios/cena-NNN.wav`; as anteriores em `audios/versoes/`.
+      const audiosManifesto: ProjetoPacote['scenes'][number]['audios'] = [];
+      const anteriores = versoesPorCena.get(c.numero) ?? [];
+      const versaoAtual = anteriores.find((v) => v.path === c.audioPath);
+      if (audio) {
+        audiosManifesto.push({
+          arquivo: audio,
+          duracaoMs: c.audioDuracaoMs ?? c.duracaoSegundos * 1000,
+          atual: true,
+          criadoEm: versaoAtual?.criadoEm.toISOString(),
+        });
+      }
+      for (const [i, v] of anteriores.entries()) {
+        if (v.path === c.audioPath) continue;
+        const nome = `audios/versoes/cena-${pad(c.numero)}-${i + 1}.${extDaChave(v.path)}`;
+        zip.append(await this.storage.get(v.path), { name: nome });
+        audiosManifesto.push({
+          arquivo: nome,
+          duracaoMs: v.duracaoMs,
+          atual: false,
+          criadoEm: v.criadoEm.toISOString(),
+        });
+      }
+      if (audio && audiosManifesto.length > 1) {
+        // Garante que só a versão igual ao áudio atual fique marcada como atual.
+        for (const a of audiosManifesto) a.atual = a.arquivo === audio;
+      }
+
       tempos.push({
         cena: c.numero,
         inicio: formatarTempo(item.inicioMs / 1000),
@@ -443,32 +490,63 @@ export class ExportService implements OnModuleInit {
             ? (c.sugestaoCamera as EfeitoCamera)
             : efeitoDaCena(efeito, c.numero),
       });
+      cenasManifesto.push({
+        numero: c.numero,
+        textoNarrado: c.textoNarrado,
+        duracaoSegundos: c.duracaoSegundos,
+        descricaoVisual: c.descricaoVisual,
+        promptImagem: c.promptImagem,
+        sugestaoCamera: c.sugestaoCamera,
+        alertaImagem: c.alertaImagem,
+        statusNarracao: c.statusNarracao,
+        statusImagem: c.statusImagem,
+        audioDuracaoMs: c.audioDuracaoMs,
+        versaoMidia: c.versaoMidia,
+        arquivoImagem: imagem,
+        arquivoAudio: audio,
+        audios: audiosManifesto,
+      });
     }
     // Elementos visuais explicativos, na ordem de criação, com o vínculo à cena.
     const visuais = await this.prisma.visualAsset.findMany({
-      where: { projectId, imagemPath: { not: null } },
+      where: { projectId },
       orderBy: { criadoEm: 'asc' },
     });
+    const visuaisManifesto: ProjetoPacote['visualAssets'] = [];
     for (const [i, v] of visuais.entries()) {
-      const nome = `elementos-visuais/${v.tipo}-${i + 1}.${extDaChave(v.imagemPath!)}`;
-      zip.append(await this.storage.get(v.imagemPath!), { name: nome });
-      tempos.push({
-        cena: v.sceneNumero,
-        tipo: v.tipo,
+      const nome = v.imagemPath
+        ? `elementos-visuais/${v.tipo}-${i + 1}.${extDaChave(v.imagemPath)}`
+        : null;
+      if (nome && v.imagemPath) {
+        zip.append(await this.storage.get(v.imagemPath), { name: nome });
+        tempos.push({
+          cena: v.sceneNumero,
+          tipo: v.tipo,
+          titulo: v.titulo,
+          periodo: v.periodo,
+          arquivo: nome,
+        } as never);
+      }
+      visuaisManifesto.push({
+        sceneNumero: v.sceneNumero,
+        tipo: v.tipo as ProjetoPacote['visualAssets'][number]['tipo'],
         titulo: v.titulo,
         periodo: v.periodo,
+        descricao: v.descricao,
+        prompt: v.prompt,
         arquivo: nome,
-      } as never);
+      });
     }
     zip.append(srtDeLegendas(this.blocosDoProjeto(linha, await this.silenciosDoProjeto(cenas), opcoesLegenda)), {
       name: 'legendas.srt',
     });
     zip.append(JSON.stringify(tempos, null, 2), { name: 'tempos.json' });
 
-    if (row?.musicaPath) {
-      zip.append(await this.storage.get(row.musicaPath), {
-        name: `musica/musica.${extDaChave(row.musicaPath)}`,
-      });
+    const arquivoMusica = row?.musicaPath
+      ? `musica/musica.${extDaChave(row.musicaPath)}`
+      : null;
+    if (row?.musicaPath && arquivoMusica) {
+      zip.append(await this.storage.get(row.musicaPath), { name: arquivoMusica });
       zip.append(
         [
           `Música: ${row.musicaNome}`,
@@ -488,12 +566,116 @@ export class ExportService implements OnModuleInit {
     zip.append(project.descricao, { name: 'descricao.txt' });
 
     const thumbs = await this.prisma.thumbnail.findMany({ where: { projectId }, orderBy: { variacao: 'asc' } });
+    const thumbsManifesto: ProjetoPacote['thumbnails'] = [];
     for (const t of thumbs) {
-      if (!t.imagemPath) continue;
-      zip.append(await this.storage.get(t.imagemPath), {
-        name: `thumbnails/thumbnail-${t.variacao}${t.escolhida ? '-escolhida' : ''}.jpg`,
+      const nome = t.imagemPath
+        ? `thumbnails/thumbnail-${t.variacao}${t.escolhida ? '-escolhida' : ''}.jpg`
+        : null;
+      if (t.imagemPath && nome) {
+        zip.append(await this.storage.get(t.imagemPath), { name: nome });
+      }
+      thumbsManifesto.push({
+        variacao: t.variacao,
+        textoNaImagem: t.textoNaImagem,
+        escolhida: t.escolhida,
+        arquivo: nome,
       });
     }
+
+    const [titulos, capitulos, revisao] = await Promise.all([
+      this.prisma.title.findMany({ where: { projectId }, orderBy: { nota: 'desc' } }),
+      this.prisma.chapter.findMany({ where: { projectId } }),
+      this.prisma.editorialReview.findFirst({
+        where: { projectId },
+        orderBy: { criadoEm: 'desc' },
+        include: { issues: { orderBy: [{ cenaNumero: 'asc' }, { id: 'asc' }] } },
+      }),
+    ]);
+
+    // O manifesto é gerado com o mesmo schema que o importador valida.
+    const manifesto: ProjetoPacote = {
+      schemaVersion: PROJETO_PACOTE_VERSAO,
+      app: PROJETO_PACOTE_APP,
+      exportadoEm: new Date().toISOString(),
+      etapaAtual: project.etapaAtual,
+      projeto: {
+        ideia: project.ideia,
+        tema: project.tema,
+        publico: project.publico,
+        formato: project.formato,
+        duracaoMinutos: project.duracaoMinutos,
+        idioma: project.idioma,
+        tituloEscolhido: project.tituloEscolhido,
+        vozNome: project.vozNome,
+        vozInstrucaoTom: project.vozInstrucaoTom,
+        narracaoNatural: project.narracaoNatural,
+        narracaoVelocidade: project.narracaoVelocidade,
+        pronuncia: project.pronuncia,
+        estiloVisual: project.estiloVisual,
+        descricao: project.descricao,
+        efeitoCamera: project.efeitoCamera,
+        usarCameraSugerida: project.usarCameraSugerida,
+        legendasAtivas: project.legendasAtivas,
+        legendaTamanho: project.legendaTamanho,
+        legendaPosicao: project.legendaPosicao,
+        legendaEstilo: project.legendaEstilo,
+        legendaFonte: project.legendaFonte,
+        legendaCor: project.legendaCor,
+        editorialStatus: project.editorialStatus,
+        roteiroManual: project.roteiroManual,
+        fontesRoteiro: project.fontesRoteiro,
+        revisaoFinalEm: project.revisaoFinalEm,
+      },
+      titles: titulos.map((t) => ({
+        texto: t.texto,
+        estilo: t.estilo,
+        nota: t.nota,
+        escolhido: t.escolhido,
+      })),
+      scenes: cenasManifesto,
+      tags: tags.map((t) => t.texto),
+      chapters: capitulos.map((c) => ({ tempo: c.tempo, titulo: c.titulo })),
+      thumbnails: thumbsManifesto,
+      visualAssets: visuaisManifesto,
+      editorial: revisao
+        ? {
+            classificacao: revisao.classificacao as NonNullable<
+              ProjetoPacote['editorial']
+            >['classificacao'],
+            resumo: revisao.resumo,
+            criadoEm: revisao.criadoEm.toISOString(),
+            issues: revisao.issues.map((i) => ({
+              cenaNumero: i.cenaNumero,
+              tipo: i.tipo as NonNullable<ProjetoPacote['editorial']>['issues'][number]['tipo'],
+              trecho: i.trecho,
+              problema: i.problema,
+              explicacao: i.explicacao,
+              sugestao: i.sugestao,
+              fonte: i.fonte,
+              confianca: i.confianca as NonNullable<
+                ProjetoPacote['editorial']
+              >['issues'][number]['confianca'],
+              status: i.status as NonNullable<ProjetoPacote['editorial']>['issues'][number]['status'],
+            })),
+          }
+        : null,
+      musica:
+        row?.musicaPath && arquivoMusica
+          ? {
+              arquivo: arquivoMusica,
+              nome: row.musicaNome,
+              artista: row.musicaArtista,
+              origem: row.musicaOrigem,
+              credito: row.musicaCredito,
+              volume: row.musicaVolume,
+              ducking: row.musicaDucking,
+            }
+          : null,
+    };
+    zip.append(JSON.stringify(projetoPacoteSchema.parse(manifesto), null, 2), {
+      name: 'projeto.json',
+    });
+
     void zip.finalize();
     return zip;
   }

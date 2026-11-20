@@ -156,7 +156,7 @@ export function MusicCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
-            <Music className="size-4 text-ai" /> Música de fundo
+            <Music className="size-4 text-ai-soft" /> Música de fundo
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Envie uma música própria ou use uma faixa da sua biblioteca local de músicas livres. Ela toca
@@ -216,7 +216,7 @@ export function MusicCard({
                 onPointerUp={() => salvarConfig({ volume })}
                 onKeyUp={() => salvarConfig({ volume })}
                 onBlur={() => salvarConfig({ volume })}
-                className="mt-2 h-2 w-full cursor-pointer accent-primary"
+                className="mt-2 h-2 w-full cursor-pointer accent-brand"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Entre 15% e 25% a música fica discreta atrás da voz.
@@ -231,7 +231,7 @@ export function MusicCard({
                   setDucking(e.target.checked);
                   void salvarConfig({ ducking: e.target.checked });
                 }}
-                className="mt-0.5 size-4 accent-primary"
+                className="mt-0.5 size-4 accent-brand"
               />
               <span>
                 Abaixar a música automaticamente enquanto houver narração

@@ -18,7 +18,13 @@ import {
   singleSceneGenSchema,
 } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
-import { promptRefazerCena, promptRoteiro, promptRoteiroExterno } from '../ai/prompts';
+import {
+  promptContinuarRoteiro,
+  promptFechamentoRoteiro,
+  promptRefazerCena,
+  promptRoteiro,
+  promptRoteiroExterno,
+} from '../ai/prompts';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { STORAGE_DRIVER, StorageDriver } from '../storage/storage.service';
@@ -106,6 +112,46 @@ const desatualizar = (status: string): string =>
 
 const limitarDuracao = (n: number) => Math.min(120, Math.max(1, Math.round(n)));
 
+/** Fonte como vem da IA; os campos opcionais são normalizados ao exportar. */
+interface FonteGerada {
+  titulo: string;
+  autor?: string;
+  ano?: string | number;
+  url?: string;
+}
+
+interface CenaNormalizada {
+  textoNarrado: string;
+  duracaoSegundos: number;
+  descricaoVisual: string;
+  sugestaoCamera: string;
+}
+
+/** Normaliza uma cena vinda da IA para o formato salvo no banco. */
+const normalizarCena = (c: {
+  textoNarrado: string;
+  duracaoSegundos: number;
+  descricaoVisual: string;
+  movimentoCamera?: string;
+}): CenaNormalizada => ({
+  textoNarrado: c.textoNarrado.trim(),
+  duracaoSegundos: limitarDuracao(c.duracaoSegundos),
+  descricaoVisual: c.descricaoVisual.trim(),
+  sugestaoCamera: cameraValida(c.movimentoCamera),
+});
+
+/**
+ * Despedida ou chamada para inscrição. O modelo às vezes encerra um bloco
+ * intermediário com esse tipo de cena, mesmo quando ainda falta roteiro.
+ * Como o fechamento oficial é gerado numa chamada separada, essas cenas são
+ * descartadas dos blocos de desenvolvimento para não aparecerem no meio do vídeo.
+ */
+const FECHAMENTO_PRECOCE =
+  /\b(inscreva(?:-se)?|se inscrev\w*|inscri[cç][aã]o no canal|deixe (?:o )?seu like|deixa (?:o )?seu like|ativ\w* o sininho|compartilhe (?:este|esse) v[ií]deo|obrigad[oa] por (?:nos )?acompanhar|at[ée] (?:o )?(?:nosso )?pr[oó]ximo v[ií]deo|subscribe|hit the bell|like this video|thanks? for watching|see you (?:in the )?next video)\b/i;
+
+const semFechamentoPrecoce = (c: CenaNormalizada): boolean =>
+  !FECHAMENTO_PRECOCE.test(c.textoNarrado);
+
 @Injectable()
 export class ScenesService {
   constructor(
@@ -128,7 +174,7 @@ export class ScenesService {
     return calcularResumoRoteiro(scenes, project.formato, project.duracaoMinutos);
   }
 
-  private async resposta(project: ProjectDto): Promise<ScenesResponse> {
+  private async resposta(project: ProjectDto, avisos: string[] = []): Promise<ScenesResponse> {
     const rows = await this.prisma.scene.findMany({
       where: { projectId: project.id },
       orderBy: { numero: 'asc' },
@@ -146,6 +192,7 @@ export class ScenesService {
       resumo: this.resumo(project, scenes),
       fontes: fontesDoProjeto(project),
       roteiroManual: project.roteiroManual,
+      avisos,
       editorial: {
         classificacao:
           (review?.classificacao as ScenesResponse['editorial']['classificacao']) ?? null,
@@ -297,7 +344,22 @@ export class ScenesService {
       throw new BadRequestException('Escolha um título na etapa 2 antes de gerar o roteiro.');
     }
 
-    const gerado = await this.ai.generateJson(
+    const alvoSegundos = project.duracaoMinutos * 60;
+    // Mínimo aceito: 90% do tempo pedido (15 min → pelo menos 12 min).
+    const minimoSegundos = Math.ceil(alvoSegundos * 0.9);
+    const blocoSegundos = project.formato === 'shorts' ? 60 : 360;
+    // A conclusão + chamada para inscrição é escrita só no fim e ocupa esta
+    // reserva; o desenvolvimento para antes dela para não estourar a duração.
+    const reservaFechamento = project.formato === 'shorts' ? 8 : 30;
+    const alvoDesenvolvimento = Math.max(1, alvoSegundos - reservaFechamento);
+    const minimoDesenvolvimento = Math.max(1, minimoSegundos - reservaFechamento);
+    // Folga para o modelo entregar menos que o bloco pedido sem parar cedo demais.
+    const maxChamadas = Math.min(20, Math.max(6, Math.ceil(alvoSegundos / 120) + 3));
+    const avisos: string[] = [];
+
+    // O primeiro pedido já é um bloco, não o roteiro inteiro: assim o modelo
+    // não tenta "fechar" o documentário antes de chegar à duração pedida.
+    const primeira = await this.ai.generateJson(
       promptRoteiro({
         titulo: project.tituloEscolhido,
         duracaoMinutos: project.duracaoMinutos,
@@ -305,9 +367,94 @@ export class ScenesService {
         tema: project.tema,
         publico: project.publico,
         idioma: project.idioma,
+        blocoSegundos: Math.min(blocoSegundos, minimoDesenvolvimento),
       }),
       roteiroGenSchema,
     );
+
+    const cenas: CenaNormalizada[] = primeira.cenas
+      .map(normalizarCena)
+      .filter(semFechamentoPrecoce);
+    const fontes: FonteGerada[] = [...(primeira.fontes ?? [])];
+    const totalSegundos = () => cenas.reduce((n, c) => n + c.duracaoSegundos, 0);
+
+    // Modelos costumam entregar menos que o pedido em vídeos longos. Continua
+    // a partir da última cena, em blocos, até chegar ao desenvolvimento mínimo.
+    let chamadas = 0;
+    let semProgresso = 0;
+    let interrompido = false;
+    while (totalSegundos() < minimoDesenvolvimento && chamadas < maxChamadas) {
+      const total = totalSegundos();
+      const faltam = Math.max(1, alvoDesenvolvimento - total);
+      const bloco = Math.min(blocoSegundos, faltam);
+
+      let continuacao;
+      try {
+        continuacao = await this.ai.generateJson(
+          promptContinuarRoteiro({
+            titulo: project.tituloEscolhido,
+            duracaoMinutos: project.duracaoMinutos,
+            formato: project.formato,
+            tema: project.tema,
+            publico: project.publico,
+            idioma: project.idioma,
+            totalSegundos: total,
+            alvoSegundos,
+            blocoSegundos: bloco,
+            cenas: cenas.map((c, i) => ({ numero: i + 1, ...c })),
+          }),
+          roteiroGenSchema,
+        );
+      } catch (e) {
+        const motivo = e instanceof Error ? e.message : 'erro inesperado';
+        avisos.push(
+          `A geração foi interrompida: ${motivo} O roteiro salvo tem ${formatarTempo(totalSegundos())} de ${formatarTempo(alvoSegundos)}.`,
+        );
+        interrompido = true;
+        break;
+      }
+
+      chamadas += 1;
+      const antes = totalSegundos();
+      cenas.push(...continuacao.cenas.map(normalizarCena).filter(semFechamentoPrecoce));
+      fontes.push(...(continuacao.fontes ?? []));
+      if (totalSegundos() <= antes) semProgresso += 1;
+      else semProgresso = 0;
+      if (semProgresso >= 2) break;
+    }
+
+    // Fechamento: a única chamada autorizada a escrever conclusão e chamada
+    // para inscrição. Fica sempre nas últimas cenas do roteiro.
+    if (!interrompido) {
+      try {
+        const fechamento = await this.ai.generateJson(
+          promptFechamentoRoteiro({
+            titulo: project.tituloEscolhido,
+            formato: project.formato,
+            tema: project.tema,
+            publico: project.publico,
+            idioma: project.idioma,
+            totalSegundos: totalSegundos(),
+            alvoSegundos,
+            blocoSegundos: reservaFechamento,
+            cenas: cenas.map((c, i) => ({ numero: i + 1, ...c })),
+          }),
+          roteiroGenSchema,
+        );
+        const limiteCenas = project.formato === 'shorts' ? 1 : 2;
+        cenas.push(...fechamento.cenas.map(normalizarCena).slice(0, limiteCenas));
+        fontes.push(...(fechamento.fontes ?? []));
+      } catch (e) {
+        const motivo = e instanceof Error ? e.message : 'erro inesperado';
+        avisos.push(`Não foi possível gerar o encerramento do roteiro: ${motivo}`);
+      }
+    }
+
+    if (totalSegundos() < minimoSegundos) {
+      avisos.push(
+        `A IA gerou ${formatarTempo(totalSegundos())} de ${formatarTempo(alvoSegundos)} — abaixo do mínimo de 90%. Gere novamente ou complete as cenas manualmente.`,
+      );
+    }
 
     const antigas = await this.prisma.scene.findMany({
       where: { projectId },
@@ -315,7 +462,16 @@ export class ScenesService {
     });
     await this.limparArquivos(antigas);
     const idsAntigos = antigas.map((s) => s.id);
-    const fontes = (gerado.fontes ?? []).filter((f) => f.titulo.trim()).slice(0, 12);
+    const fontesUnicas = (() => {
+      const porTitulo = new Map<string, FonteGerada>();
+      for (const f of fontes) {
+        const titulo = f.titulo.trim();
+        if (!titulo) continue;
+        const chave = titulo.toLowerCase();
+        if (!porTitulo.has(chave)) porTitulo.set(chave, { ...f, titulo });
+      }
+      return [...porTitulo.values()].slice(0, 12);
+    })();
     await this.prisma.$transaction([
       // Jobs presos às cenas antigas deixariam erros órfãos na tela.
       this.prisma.job.deleteMany({
@@ -323,29 +479,32 @@ export class ScenesService {
       }),
       this.prisma.scene.deleteMany({ where: { projectId } }),
       this.prisma.scene.createMany({
-        data: gerado.cenas.map((c, i) => ({
+        data: cenas.map((c, i) => ({
           projectId,
           numero: i + 1,
-          textoNarrado: c.textoNarrado.trim(),
-          duracaoSegundos: limitarDuracao(c.duracaoSegundos),
-          descricaoVisual: c.descricaoVisual.trim(),
-          sugestaoCamera: cameraValida(c.movimentoCamera),
+          textoNarrado: c.textoNarrado,
+          duracaoSegundos: c.duracaoSegundos,
+          descricaoVisual: c.descricaoVisual,
+          sugestaoCamera: c.sugestaoCamera,
         })),
       }),
       // Um roteiro novo invalida a revisão editorial anterior.
       this.prisma.editorialIssue.deleteMany({ where: { projectId } }),
       this.prisma.editorialReview.deleteMany({ where: { projectId } }),
+      // Os capítulos da descrição usam os tempos das cenas antigas.
+      this.prisma.chapter.deleteMany({ where: { projectId } }),
       this.prisma.visualAsset.updateMany({ where: { projectId }, data: { sceneNumero: null } }),
       this.prisma.project.update({
         where: { id: projectId },
         data: {
-          fontesRoteiro: JSON.stringify(fontes),
+          fontesRoteiro: JSON.stringify(fontesUnicas),
           editorialStatus: 'nao_revisado',
           roteiroManual: false,
+          descricao: '',
         },
       }),
     ]);
-    return this.resposta(await this.projects.get(projectId));
+    return this.resposta(await this.projects.get(projectId), avisos);
   }
 
   /**
@@ -388,6 +547,8 @@ export class ScenesService {
       // Um roteiro novo invalida a revisão editorial anterior.
       this.prisma.editorialIssue.deleteMany({ where: { projectId } }),
       this.prisma.editorialReview.deleteMany({ where: { projectId } }),
+      // Os capítulos da descrição usam os tempos das cenas antigas.
+      this.prisma.chapter.deleteMany({ where: { projectId } }),
       this.prisma.visualAsset.updateMany({ where: { projectId }, data: { sceneNumero: null } }),
       this.prisma.project.update({
         where: { id: projectId },
@@ -395,6 +556,7 @@ export class ScenesService {
           fontesRoteiro: JSON.stringify(fontes),
           editorialStatus: 'nao_revisado',
           roteiroManual: true,
+          descricao: '',
         },
       }),
     ]);
