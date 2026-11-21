@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Job } from '@prisma/client';
 import archiver from 'archiver';
 import { promises as fs } from 'fs';
@@ -57,6 +63,9 @@ const faltaMidia = (c: {
 
 @Injectable()
 export class ExportService implements OnModuleInit {
+  /** Progresso (0-100) das montagens em andamento, por exportação. */
+  private readonly progresso = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jobs: JobsService,
@@ -92,6 +101,12 @@ export class ExportService implements OnModuleInit {
       mp4: ultimo
         ? { status: ultimo.status as JobStatus, atualizadoEm: ultimo.createdAt.toISOString(), erro }
         : null,
+      progresso:
+        ultimo && (ultimo.status === 'fila' || ultimo.status === 'executando')
+          ? (this.progresso.get(ultimo.id) ?? 0)
+          : ultimo?.status === 'concluido'
+            ? 100
+            : null,
       jobs,
       faltando: cenas.filter(faltaMidia).map((c) => c.numero),
       totalSegundos: Math.round(total),
@@ -113,7 +128,8 @@ export class ExportService implements OnModuleInit {
   async render(projectId: string): Promise<ExportResponse> {
     await this.projects.get(projectId);
     const cenas = await this.cenasOrdenadas(projectId);
-    if (cenas.length === 0) throw new BadRequestException('Gere o roteiro antes de montar o vídeo.');
+    if (cenas.length === 0)
+      throw new BadRequestException('Gere o roteiro antes de montar o vídeo.');
     const faltando = cenas.filter(faltaMidia).map((c) => c.numero);
     if (faltando.length) {
       throw new BadRequestException(
@@ -128,7 +144,9 @@ export class ExportService implements OnModuleInit {
     await this.prisma.job.deleteMany({
       where: { projectId, tipo: 'render', status: { in: ['concluido', 'erro'] } },
     });
-    const exp = await this.prisma.export.create({ data: { projectId, tipo: 'mp4', status: 'fila' } });
+    const exp = await this.prisma.export.create({
+      data: { projectId, tipo: 'mp4', status: 'fila' },
+    });
     await this.jobs.enqueue(projectId, 'render', exp.id);
     return this.status(projectId);
   }
@@ -138,17 +156,20 @@ export class ExportService implements OnModuleInit {
     const exp = await this.prisma.export.findUnique({ where: { id: exportId } });
     if (!exp) return;
     await this.prisma.export.update({ where: { id: exportId }, data: { status: 'executando' } });
+    this.progresso.set(exportId, 0);
     try {
       const project = await this.projects.get(exp.projectId);
       const row = await this.prisma.project.findUnique({ where: { id: exp.projectId } });
       const cenas = await this.cenasOrdenadas(exp.projectId);
       const falta = cenas.filter(faltaMidia).map((c) => c.numero);
       if (cenas.length === 0 || falta.length) {
-        throw new Error(`Faltam narração ou imagem atualizadas nas cenas: ${falta.join(', ') || 'todas'}.`);
+        throw new Error(
+          `Faltam narração ou imagem atualizadas nas cenas: ${falta.join(', ') || 'todas'}.`,
+        );
       }
       const { largura, altura } = resolucaoDoFormato(project.formato);
       const efeito = (row?.efeitoCamera as EfeitoCamera) ?? 'alternado';
-      const usarSugerida = row?.usarCameraSugerida ?? false;
+      const usarSugerida = row?.usarCameraSugerida ?? true;
       const legendasAtivas = row?.legendasAtivas ?? true;
       const opcoesLegenda = opcoesDeLegenda(
         largura,
@@ -163,7 +184,11 @@ export class ExportService implements OnModuleInit {
       const visuais = new Map(
         (
           await this.prisma.visualAsset.findMany({
-            where: { projectId: exp.projectId, sceneNumero: { not: null }, imagemPath: { not: null } },
+            where: {
+              projectId: exp.projectId,
+              sceneNumero: { not: null },
+              imagemPath: { not: null },
+            },
           })
         )
           .filter((v) => v.sceneNumero !== null && v.imagemPath)
@@ -175,7 +200,7 @@ export class ExportService implements OnModuleInit {
 
       const mp4 = await this.ffmpeg.comPastaTemporaria(async (dir) => {
         const lista: string[] = [];
-        for (const c of cenas) {
+        for (const [indice, c] of cenas.entries()) {
           let img = join(dir, `img-${pad(c.numero)}.${extDaChave(c.imagemPath!)}`);
           const aud = join(dir, `aud-${pad(c.numero)}.wav`);
           const seg = join(dir, `seg-${pad(c.numero)}.mp4`);
@@ -192,7 +217,13 @@ export class ExportService implements OnModuleInit {
           if (legendasAtivas) {
             // Pausas reais da narração: usadas para encaixar as trocas de legenda.
             const saida = await this.ffmpeg.capture([
-              '-i', aud, '-af', 'silencedetect=noise=-35dB:d=0.16', '-f', 'null', '-',
+              '-i',
+              aud,
+              '-af',
+              'silencedetect=noise=-35dB:d=0.16',
+              '-f',
+              'null',
+              '-',
             ]);
             silenciosPorCena.set(c.numero, parsearSilencios(saida, segundos * 1000));
           }
@@ -203,20 +234,63 @@ export class ExportService implements OnModuleInit {
               : efeitoDaCena(efeito, c.numero);
           const movimento = filtroCamera(escolhido, largura, altura, segundos);
           await this.ffmpeg.run([
-            '-y', '-loop', '1', '-framerate', String(FPS_VIDEO), '-i', img, '-i', aud,
-            '-vf', movimento ? `${movimento},format=yuv420p` : filtroParado, '-t', dur,
-            '-c:v', 'libx264',
+            '-y',
+            '-loop',
+            '1',
+            '-framerate',
+            String(FPS_VIDEO),
+            '-i',
+            img,
+            '-i',
+            aud,
+            '-vf',
+            movimento ? `${movimento},format=yuv420p` : filtroParado,
+            '-t',
+            dur,
+            '-c:v',
+            'libx264',
             ...(movimento ? [] : ['-tune', 'stillimage']),
-            '-preset', 'veryfast', '-crf', '23', '-r', String(FPS_VIDEO),
-            '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
-            '-movflags', '+faststart', seg,
+            '-preset',
+            'veryfast',
+            '-crf',
+            '23',
+            '-r',
+            String(FPS_VIDEO),
+            '-c:a',
+            'aac',
+            '-b:a',
+            '192k',
+            '-ar',
+            '48000',
+            '-ac',
+            '2',
+            '-movflags',
+            '+faststart',
+            seg,
           ]);
           lista.push(`file '${seg}'`);
+          // 80% do contador vem dos clipes; o restante é concatenação, música e legendas.
+          this.progresso.set(exportId, Math.round(((indice + 1) / cenas.length) * 80));
         }
+        this.progresso.set(exportId, 82);
         const listaPath = join(dir, 'lista.txt');
         const semMusica = join(dir, 'final.mp4');
         await fs.writeFile(listaPath, lista.join('\n'));
-        await this.ffmpeg.run(['-y', '-f', 'concat', '-safe', '0', '-i', listaPath, '-c', 'copy', '-movflags', '+faststart', semMusica]);
+        await this.ffmpeg.run([
+          '-y',
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          listaPath,
+          '-c',
+          'copy',
+          '-movflags',
+          '+faststart',
+          semMusica,
+        ]);
+        this.progresso.set(exportId, 86);
 
         const total = cenas.reduce(
           (acc, c) => acc + (c.audioDuracaoMs ?? c.duracaoSegundos * 1000) / 1000,
@@ -238,6 +312,7 @@ export class ExportService implements OnModuleInit {
           );
           base = comMusica;
         }
+        this.progresso.set(exportId, 90);
 
         if (!legendasAtivas) return fs.readFile(base);
 
@@ -249,20 +324,43 @@ export class ExportService implements OnModuleInit {
         await fs.writeFile(assPath, assDeLegendas(blocos, opcoesLegenda, medidas));
         const comLegendas = join(dir, 'final-legendas.mp4');
         await this.ffmpeg.run([
-          '-y', '-i', base,
-          '-vf', filtroLegendas(assPath),
-          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p',
-          '-c:a', 'copy', '-movflags', '+faststart', comLegendas,
+          '-y',
+          '-i',
+          base,
+          '-vf',
+          filtroLegendas(assPath),
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '21',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'copy',
+          '-movflags',
+          '+faststart',
+          comLegendas,
         ]);
+        this.progresso.set(exportId, 97);
         return fs.readFile(comLegendas);
       });
 
       const chave = chaveVideo(exp.projectId);
       await this.storage.put(chave, mp4, 'video/mp4');
-      await this.prisma.export.update({ where: { id: exportId }, data: { status: 'concluido', path: chave } });
+      await this.prisma.export.update({
+        where: { id: exportId },
+        data: { status: 'concluido', path: chave },
+      });
+      this.progresso.set(exportId, 100);
     } catch (e) {
-      await this.prisma.export.update({ where: { id: exportId }, data: { status: 'erro' } }).catch(() => undefined);
+      await this.prisma.export
+        .update({ where: { id: exportId }, data: { status: 'erro' } })
+        .catch(() => undefined);
       throw e;
+    } finally {
+      this.progresso.delete(exportId);
     }
   }
 
@@ -282,18 +380,24 @@ export class ExportService implements OnModuleInit {
     const escala = Math.max(2, Math.round((largura * 0.62) / 2) * 2);
     const margem = Math.round(largura * 0.02);
     await this.ffmpeg.run([
-      '-y', '-i', imagem, '-i', visual,
+      '-y',
+      '-i',
+      imagem,
+      '-i',
+      visual,
       '-filter_complex',
       `[0:v]scale=${largura}:${altura}:force_original_aspect_ratio=increase,` +
         `crop=${largura}:${altura}[bg];` +
         `[1:v]scale=${escala}:-2[ov];` +
         `[bg][ov]overlay=W-w-${margem}:H-h-${margem}:format=auto`,
-      '-frames:v', '1', saida,
+      '-frames:v',
+      '1',
+      saida,
     ]);
     return saida;
   }
 
-  /** Envelope do FFmpeg para misturar a música de fundo com a narração já montada. */  private argumentosDeMusica(
+  /** Envelope do FFmpeg para misturar a música de fundo com a narração já montada. */ private argumentosDeMusica(
     video: string,
     musica: string,
     saida: string,
@@ -315,9 +419,28 @@ export class ExportService implements OnModuleInit {
         `[voice][duck]${mistura}`
       : `${narracao}[voice];${musicaFiltro};[voice][mus]${mistura}`;
     return [
-      '-y', '-i', video, '-stream_loop', '-1', '-i', musica,
-      '-filter_complex', grafo, '-map', '0:v:0', '-map', '[aout]',
-      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', saida,
+      '-y',
+      '-i',
+      video,
+      '-stream_loop',
+      '-1',
+      '-i',
+      musica,
+      '-filter_complex',
+      grafo,
+      '-map',
+      '0:v:0',
+      '-map',
+      '[aout]',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-movflags',
+      '+faststart',
+      saida,
     ];
   }
 
@@ -341,10 +464,19 @@ export class ExportService implements OnModuleInit {
       const caminho = join(dir, `medicao-${pad(i)}.ass`);
       await fs.writeFile(caminho, ass);
       const quadro = await this.ffmpeg.runBuffer([
-        '-f', 'lavfi',
-        '-i', `color=c=black:s=${opcoes.largura}x${altura}:r=1:d=1`,
-        '-vf', filtroAss(caminho),
-        '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-',
+        '-f',
+        'lavfi',
+        '-i',
+        `color=c=black:s=${opcoes.largura}x${altura}:r=1:d=1`,
+        '-vf',
+        filtroAss(caminho),
+        '-frames:v',
+        '1',
+        '-f',
+        'rawvideo',
+        '-pix_fmt',
+        'gray',
+        '-',
       ]);
       medidas.push(
         ...parsearMedicoes(quadro, opcoes.largura, altura, passo, parte.length, opcoes.fonte),
@@ -387,7 +519,13 @@ export class ExportService implements OnModuleInit {
         await fs.writeFile(wav, await this.storage.get(cena.audioPath));
         const duracaoMs = cena.audioDuracaoMs ?? cena.duracaoSegundos * 1000;
         const saida = await this.ffmpeg.capture([
-          '-i', wav, '-af', 'silencedetect=noise=-35dB:d=0.16', '-f', 'null', '-',
+          '-i',
+          wav,
+          '-af',
+          'silencedetect=noise=-35dB:d=0.16',
+          '-f',
+          'null',
+          '-',
         ]);
         mapa.set(cena.numero, parsearSilencios(saida, duracaoMs));
       }
@@ -402,7 +540,8 @@ export class ExportService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
     });
     if (!exp?.path) throw new NotFoundException('O vídeo ainda não foi montado.');
-    const nome = (project.tituloEscolhido || 'video').replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 60) || 'video';
+    const nome =
+      (project.tituloEscolhido || 'video').replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 60) || 'video';
     return { data: await this.storage.get(exp.path), nome: `${nome}.mp4` };
   }
 
@@ -414,7 +553,7 @@ export class ExportService implements OnModuleInit {
     if (cenas.length === 0) throw new BadRequestException('Não há cenas para exportar.');
     const linha = linhaDoTempo(cenas);
     const efeito = (row?.efeitoCamera as EfeitoCamera) ?? 'alternado';
-    const usarSugerida = row?.usarCameraSugerida ?? false;
+    const usarSugerida = row?.usarCameraSugerida ?? true;
     const { largura, altura } = resolucaoDoFormato(project.formato);
     const opcoesLegenda = opcoesDeLegenda(
       largura,
@@ -444,7 +583,9 @@ export class ExportService implements OnModuleInit {
     const cenasManifesto: ProjetoPacote['scenes'] = [];
     for (const c of cenas) {
       const item = linha[c.numero - 1];
-      const imagem = c.imagemPath ? `imagens/cena-${pad(c.numero)}.${extDaChave(c.imagemPath)}` : null;
+      const imagem = c.imagemPath
+        ? `imagens/cena-${pad(c.numero)}.${extDaChave(c.imagemPath)}`
+        : null;
       const audio = c.audioPath ? `audios/cena-${pad(c.numero)}.wav` : null;
       if (imagem) zip.append(await this.storage.get(c.imagemPath!), { name: imagem });
       if (audio) zip.append(await this.storage.get(c.audioPath!), { name: audio });
@@ -537,14 +678,17 @@ export class ExportService implements OnModuleInit {
         arquivo: nome,
       });
     }
-    zip.append(srtDeLegendas(this.blocosDoProjeto(linha, await this.silenciosDoProjeto(cenas), opcoesLegenda)), {
-      name: 'legendas.srt',
-    });
+    zip.append(
+      srtDeLegendas(
+        this.blocosDoProjeto(linha, await this.silenciosDoProjeto(cenas), opcoesLegenda),
+      ),
+      {
+        name: 'legendas.srt',
+      },
+    );
     zip.append(JSON.stringify(tempos, null, 2), { name: 'tempos.json' });
 
-    const arquivoMusica = row?.musicaPath
-      ? `musica/musica.${extDaChave(row.musicaPath)}`
-      : null;
+    const arquivoMusica = row?.musicaPath ? `musica/musica.${extDaChave(row.musicaPath)}` : null;
     if (row?.musicaPath && arquivoMusica) {
       zip.append(await this.storage.get(row.musicaPath), { name: arquivoMusica });
       zip.append(
@@ -560,12 +704,18 @@ export class ExportService implements OnModuleInit {
       );
     }
 
-    const tags = await this.prisma.tag.findMany({ where: { projectId }, orderBy: { ordem: 'asc' } });
+    const tags = await this.prisma.tag.findMany({
+      where: { projectId },
+      orderBy: { ordem: 'asc' },
+    });
     zip.append(project.tituloEscolhido, { name: 'titulo.txt' });
     zip.append(tags.map((t) => t.texto).join(','), { name: 'tags.txt' });
     zip.append(project.descricao, { name: 'descricao.txt' });
 
-    const thumbs = await this.prisma.thumbnail.findMany({ where: { projectId }, orderBy: { variacao: 'asc' } });
+    const thumbs = await this.prisma.thumbnail.findMany({
+      where: { projectId },
+      orderBy: { variacao: 'asc' },
+    });
     const thumbsManifesto: ProjetoPacote['thumbnails'] = [];
     for (const t of thumbs) {
       const nome = t.imagemPath
@@ -655,7 +805,9 @@ export class ExportService implements OnModuleInit {
               confianca: i.confianca as NonNullable<
                 ProjetoPacote['editorial']
               >['issues'][number]['confianca'],
-              status: i.status as NonNullable<ProjetoPacote['editorial']>['issues'][number]['status'],
+              status: i.status as NonNullable<
+                ProjetoPacote['editorial']
+              >['issues'][number]['status'],
             })),
           }
         : null,

@@ -888,7 +888,7 @@ export function RoteiroView({
                     <Input
                       id={`dur-${s.id}`}
                       type="number"
-                      min={1}
+                      min={min}
                       max={120}
                       value={s.duracaoSegundos}
                       onChange={(e) =>
@@ -897,7 +897,7 @@ export function RoteiroView({
                       onBlur={(e) => {
                         const n = Math.min(
                           120,
-                          Math.max(1, Math.round(Number(e.target.value) || 1)),
+                          Math.max(min, Math.round(Number(e.target.value) || min)),
                         );
                         editarLocal(s.id, { duracaoSegundos: n });
                         salvarCena(s.id, { duracaoSegundos: n });

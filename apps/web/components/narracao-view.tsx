@@ -2,8 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, History, Loader2, Mic, Play, RefreshCw, Sparkles, Timer } from 'lucide-react';
 import {
+  Check,
+  History,
+  Loader2,
+  Mic,
+  PencilLine,
+  Play,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  Timer,
+} from 'lucide-react';
+import {
+  LIMITES_FORMATO,
   NARRACAO_VELOCIDADE_MAX,
   NARRACAO_VELOCIDADE_MIN,
   formatarTempo,
@@ -21,6 +33,7 @@ import { StepHeader } from '@/components/step-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { API_URL, apiFetch, fetchBlob, patch, post } from '@/lib/client-api';
@@ -40,14 +53,16 @@ export function NarracaoView({
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [amostra, setAmostra] = useState<'parada' | 'gerando' | 'tocando'>('parada');
-  const [natural, setNatural] = useState(initial.narracaoNatural);
-  const [salvandoNatural, setSalvandoNatural] = useState(false);
   const [velocidade, setVelocidade] = useState(initial.narracaoVelocidade);
   const [pronuncia, setPronuncia] = useState(initial.pronuncia);
   const [salvandoConfig, setSalvandoConfig] = useState<'velocidade' | 'pronuncia' | null>(null);
+  const [configAberta, setConfigAberta] = useState(false);
   const [versoes, setVersoes] = useState<Record<string, AudioVersaoDto[]>>({});
   const [carregandoVersoes, setCarregandoVersoes] = useState<string | null>(null);
   const [continuando, setContinuando] = useState(false);
+  const [editando, setEditando] = useState<SceneDto | null>(null);
+  const [textoEditado, setTextoEditado] = useState('');
+  const [salvandoTexto, setSalvandoTexto] = useState(false);
   const audioAmostra = useRef<HTMLAudioElement | null>(null);
   const ultimaVelocidade = useRef(initial.narracaoVelocidade);
 
@@ -69,6 +84,12 @@ export function NarracaoView({
   const total = data.scenes.length;
   const pendentes = total - prontas;
   const tudoPronto = total > 0 && pendentes === 0 && ativos.length === 0;
+  const resumo = data.resumo;
+  const minimoDuracao = LIMITES_FORMATO[data.formato].cena[0];
+  const desvioTexto = `${resumo.desvioPercentual > 0 ? '+' : ''}${resumo.desvioPercentual}%`;
+  const regrasPronuncia = pronuncia
+    .split('\n')
+    .filter((linha) => linha.includes('=') && linha.split('=')[0].trim().length > 0).length;
 
   async function executar(fn: () => Promise<NarrationResponse>) {
     setErro(null);
@@ -95,24 +116,6 @@ export function NarracaoView({
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível gerar a amostra');
       setAmostra('parada');
-    }
-  }
-
-  async function alternarNatural(ativo: boolean) {
-    if (salvandoNatural || ativo === natural) return;
-    const anterior = natural;
-    setNatural(ativo);
-    setSalvandoNatural(true);
-    setErro(null);
-    try {
-      await patch<ProjectDto>(`/projects/${projectId}`, { narracaoNatural: ativo });
-    } catch (e) {
-      setNatural(anterior);
-      setErro(
-        e instanceof Error ? e.message : 'Não foi possível salvar a configuração da narração.',
-      );
-    } finally {
-      setSalvandoNatural(false);
     }
   }
 
@@ -172,6 +175,38 @@ export function NarracaoView({
     }
   }
 
+  function abrirEdicao(s: SceneDto) {
+    setErro(null);
+    setEditando(s);
+    setTextoEditado(s.textoNarrado);
+  }
+
+  /** Corrige o texto sem sair da narração; o áudio atual fica marcado como desatualizado. */
+  async function salvarTexto() {
+    if (!editando || salvandoTexto) return;
+    if (!textoEditado.trim()) {
+      setErro('O texto narrado não pode ficar vazio.');
+      return;
+    }
+    setSalvandoTexto(true);
+    setErro(null);
+    try {
+      const r = await patch<{ scene: SceneDto; resumo: RoteiroResumo }>(`/scenes/${editando.id}`, {
+        textoNarrado: textoEditado,
+      });
+      setData((d) => ({
+        ...d,
+        resumo: r.resumo,
+        scenes: d.scenes.map((x) => (x.id === r.scene.id ? r.scene : x)),
+      }));
+      setEditando(null);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível salvar o texto');
+    } finally {
+      setSalvandoTexto(false);
+    }
+  }
+
   async function alternarVersoes(s: SceneDto) {
     if (versoes[s.id]) {
       setVersoes((v) => {
@@ -205,7 +240,7 @@ export function NarracaoView({
   /** Ajusta a duração planejada da cena ao tempo real do áudio aprovado. */
   async function ajustarDuracao(s: SceneDto) {
     if (!s.audioDuracaoMs) return;
-    const segundos = Math.max(1, Math.round(s.audioDuracaoMs / 1000));
+    const segundos = Math.max(minimoDuracao, Math.round(s.audioDuracaoMs / 1000));
     setErro(null);
     try {
       const r = await patch<{ scene: SceneDto; resumo: RoteiroResumo }>(`/scenes/${s.id}`, {
@@ -213,6 +248,7 @@ export function NarracaoView({
       });
       setData((d) => ({
         ...d,
+        resumo: r.resumo,
         scenes: d.scenes.map((x) =>
           x.id === s.id ? { ...x, duracaoSegundos: r.scene.duracaoSegundos } : x,
         ),
@@ -241,42 +277,90 @@ export function NarracaoView({
               A mesma voz (definida em FISH_VOICE_ID no servidor) é usada em todas as cenas.
             </p>
           </div>
-          <Button variant="outline" onClick={ouvirAmostra} disabled={amostra !== 'parada'}>
-            <Play className="size-4" />
-            {amostra === 'gerando'
-              ? 'Gerando amostra...'
-              : amostra === 'tocando'
-                ? 'Tocando...'
-                : 'Ouvir amostra'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={ouvirAmostra} disabled={amostra !== 'parada'}>
+              <Play className="size-4" />
+              {amostra === 'gerando'
+                ? 'Gerando amostra...'
+                : amostra === 'tocando'
+                  ? 'Tocando...'
+                  : 'Ouvir amostra'}
+            </Button>
+            <Button variant="outline" onClick={() => setConfigAberta(true)}>
+              <Settings2 className="size-4" />
+              Configurar voz
+            </Button>
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-start justify-between gap-2 border-t pt-4">
-          <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-3 text-xs text-muted-foreground">
+          <span>
+            Velocidade da narração: <strong className="text-foreground">{velocidade}%</strong>
+          </span>
+          <span>
+            Pronúncia:{' '}
+            <strong className="text-foreground">
+              {regrasPronuncia === 0
+                ? 'sem regras'
+                : `${regrasPronuncia} ${regrasPronuncia === 1 ? 'regra' : 'regras'}`}
+            </strong>
+          </span>
+          <Badge variant="success">Narração mais humana</Badge>
+        </div>
+      </Card>
+
+      <Dialog
+        open={configAberta}
+        onClose={() => setConfigAberta(false)}
+        title="Configurações da voz"
+        description="A voz é a mesma em todas as cenas. Estes ajustes valem para a amostra e para as próximas narrações."
+        wide
+        footer={
+          <>
+            <Button variant="outline" onClick={ouvirAmostra} disabled={amostra !== 'parada'}>
+              <Play className="size-4" />
+              {amostra === 'gerando'
+                ? 'Gerando amostra...'
+                : amostra === 'tocando'
+                  ? 'Tocando...'
+                  : 'Ouvir amostra'}
+            </Button>
+            <Button onClick={() => setConfigAberta(false)}>Concluir</Button>
+          </>
+        }
+      >
+        {erro && (
+          <div className="mb-3">
+            <ErrorBox message={erro} />
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-border-soft bg-panel/40 p-3">
+          <label className="flex cursor-default items-start gap-2 text-sm">
             <input
               type="checkbox"
-              checked={natural}
-              onChange={(e) => alternarNatural(e.target.checked)}
+              checked
+              readOnly
+              disabled
               className="mt-0.5 size-4 accent-brand"
             />
             <span>
               Narração mais humana (pausas e respiro)
               <span className="mt-1 block max-w-2xl text-xs text-muted-foreground">
-                Insere pausas curtas depois das vírgulas e no fim das frases, com um tom mais calmo.
-                Vale para as próximas narrações e para a amostra; refaça as cenas para ouvir.
+                Sempre ativa neste projeto: insere pausas curtas depois das vírgulas e no fim das
+                frases, com um tom mais calmo. Vale para a amostra e para todas as narrações.
               </span>
             </span>
           </label>
-          {salvandoNatural && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" /> Salvando
-            </span>
-          )}
+          <Badge variant="success">Sempre ativa</Badge>
         </div>
 
-        <div className="mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="velocidade" className="flex items-center justify-between text-xs font-medium">
+            <Label
+              htmlFor="velocidade"
+              className="flex items-center justify-between text-xs font-medium"
+            >
               <span>Velocidade da narração</span>
               <span className="text-muted-foreground">{velocidade}%</span>
             </Label>
@@ -305,7 +389,9 @@ export function NarracaoView({
               value={pronuncia}
               onChange={(e) => setPronuncia(e.target.value)}
               onBlur={salvarPronuncia}
-              placeholder={'Ex.:\nIBGE = I-B-G-E\nAnhumas = A-nhu-mas\n1942 = mil novecentos e quarenta e dois'}
+              placeholder={
+                'Ex.:\nIBGE = I-B-G-E\nAnhumas = A-nhu-mas\n1942 = mil novecentos e quarenta e dois'
+              }
               className="mt-1.5 min-h-20"
             />
             <p className="mt-1 text-xs text-muted-foreground">
@@ -319,7 +405,26 @@ export function NarracaoView({
             </span>
           )}
         </div>
-      </Card>
+      </Dialog>
+
+      {total > 0 && (
+        <div className="mt-5 rounded-xl border border-border-soft bg-panel/60 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[13px]">
+            <span>
+              <strong className="tabular-nums">{total}</strong> cenas
+            </span>
+            <span>
+              Total <strong className="tabular-nums">{formatarTempo(resumo.totalSegundos)}</strong>{' '}
+              de {formatarTempo(resumo.alvoSegundos)}
+            </span>
+            <span className={resumo.dentroDaMargem ? 'text-success-soft' : 'text-warning-soft'}>
+              {resumo.dentroDaMargem
+                ? `Dentro da margem de 10% (${desvioTexto})`
+                : `Fora da margem de 10% (${desvioTexto})`}
+            </span>
+          </div>
+        </div>
+      )}
 
       {total === 0 ? (
         <div className="mt-6">
@@ -371,7 +476,7 @@ export function NarracaoView({
         </div>
       )}
 
-      {erro && (
+      {erro && !editando && !configAberta && (
         <div className="mt-6">
           <ErrorBox message={erro} />
         </div>
@@ -438,6 +543,17 @@ export function NarracaoView({
                     >
                       <RefreshCw className="size-4" /> {s.temAudio ? 'Refazer' : 'Gerar'}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-warning hover:bg-warning/10 hover:text-warning"
+                      disabled={enviando || gerando}
+                      onClick={() => abrirEdicao(s)}
+                      title="Editar o texto narrado desta cena"
+                      aria-label={`Editar o texto narrado da cena ${s.numero}`}
+                    >
+                      <PencilLine className="size-4" />
+                    </Button>
                   </div>
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -461,7 +577,7 @@ export function NarracaoView({
                       className="h-6 px-2 text-xs"
                       onClick={() => ajustarDuracao(s)}
                     >
-                      Ajustar planejado para {Math.round(audioMs / 1000)} s
+                      Ajustar planejado para {Math.max(minimoDuracao, Math.round(audioMs / 1000))} s
                     </Button>
                   )}
                 </div>
@@ -481,7 +597,9 @@ export function NarracaoView({
                       Versões guardadas: ouça e escolha qual fica na cena.
                     </p>
                     {versoes[s.id].length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhuma versão guardada ainda.</p>
+                      <p className="text-xs text-muted-foreground">
+                        Nenhuma versão guardada ainda.
+                      </p>
                     ) : (
                       versoes[s.id].map((v, i) => (
                         <div key={v.id} className="flex flex-wrap items-center gap-2">
@@ -500,7 +618,11 @@ export function NarracaoView({
                             src={`${API_URL}/scenes/${s.id}/audio/versions/${v.id}?v=${i}`}
                           />
                           {!v.atual && (
-                            <Button size="sm" variant="outline" onClick={() => usarVersao(s.id, v.id)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => usarVersao(s.id, v.id)}
+                            >
                               Usar esta
                             </Button>
                           )}
@@ -516,6 +638,50 @@ export function NarracaoView({
           );
         })}
       </ol>
+
+      <Dialog
+        open={editando !== null}
+        onClose={() => {
+          if (!salvandoTexto) setEditando(null);
+        }}
+        title={`Editar texto da cena ${editando?.numero ?? ''}`}
+        description="Ajuste o texto que será narrado. Ao salvar, o áudio atual fica marcado como desatualizado para você gerar de novo."
+        wide
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditando(null)} disabled={salvandoTexto}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarTexto} disabled={salvandoTexto}>
+              {salvandoTexto ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              {salvandoTexto ? 'Salvando...' : 'Salvar texto'}
+            </Button>
+          </>
+        }
+      >
+        {erro && (
+          <div className="mb-3">
+            <ErrorBox message={erro} />
+          </div>
+        )}
+        <Label htmlFor="texto-narrado-edicao">Texto narrado</Label>
+        <Textarea
+          id="texto-narrado-edicao"
+          value={textoEditado}
+          onChange={(e) => setTextoEditado(e.target.value)}
+          className="mt-1.5 min-h-48"
+          data-autofocus
+        />
+        {editando && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Duração planejada: {formatarTempo(editando.duracaoSegundos)}.
+          </p>
+        )}
+      </Dialog>
 
       <ActionBar
         voltarHref={`/projetos/${projectId}/roteiro`}

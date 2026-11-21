@@ -23,6 +23,7 @@ import { ErrorBox } from '@/components/error-box';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -53,6 +54,7 @@ export function VisualAssetsCard({
 }) {
   const [data, setData] = useState(initial);
   const [novo, setNovo] = useState<CreateVisualAssetInput>(vazio);
+  const [modalAberto, setModalAberto] = useState(false);
   const [criando, setCriando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export function VisualAssetsCard({
     try {
       setData(await post<VisualAssetsResponse>(`/projects/${projectId}/visual`, novo));
       setNovo(vazio);
+      setModalAberto(false);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível criar o elemento visual');
     } finally {
@@ -161,90 +164,120 @@ export function VisualAssetsCard({
             elemento aparece como inserção no canto inferior direito da cena escolhida.
           </p>
         </div>
-        {ativos.length > 0 && (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" /> Gerando {ativos.length}...
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {ativos.length > 0 && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Gerando {ativos.length}...
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setErro(null);
+              setModalAberto(true);
+            }}
+          >
+            <Plus className="size-4" /> Novo mapa ou linha do tempo
+          </Button>
+        </div>
       </div>
 
-      {erro && (
+      {erro && !modalAberto && (
         <div className="mt-3">
           <ErrorBox message={erro} />
         </div>
       )}
 
-      <div className="mt-4 grid gap-3 rounded-lg border bg-panel/40 p-3 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="visual-tipo">Tipo</Label>
-          <select
-            id="visual-tipo"
-            value={novo.tipo}
-            onChange={(e) => setNovo((n) => ({ ...n, tipo: e.target.value as TipoVisual }))}
-            className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="mapa">{ROTULO_VISUAL.mapa}</option>
-            <option value="linha-do-tempo">{ROTULO_VISUAL['linha-do-tempo']}</option>
-          </select>
+      <Dialog
+        open={modalAberto}
+        onClose={() => setModalAberto(false)}
+        title="Novo mapa ou linha do tempo"
+        description="Descreva o elemento explicativo. A IA gera a imagem com base no período informado e no guia de estilo do projeto."
+        wide
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setModalAberto(false)} disabled={criando}>
+              Cancelar
+            </Button>
+            <Button variant="ai" onClick={criar} disabled={criando || ativos.length > 0}>
+              {criando ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {criando ? 'Criando...' : 'Criar e gerar imagem'}
+            </Button>
+          </>
+        }
+      >
+        {erro && (
+          <div className="mb-3">
+            <ErrorBox message={erro} />
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="visual-tipo">Tipo</Label>
+            <select
+              id="visual-tipo"
+              value={novo.tipo}
+              onChange={(e) => setNovo((n) => ({ ...n, tipo: e.target.value as TipoVisual }))}
+              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+            >
+              <option value="mapa">{ROTULO_VISUAL.mapa}</option>
+              <option value="linha-do-tempo">{ROTULO_VISUAL['linha-do-tempo']}</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="visual-cena">Cena (opcional)</Label>
+            <select
+              id="visual-cena"
+              value={novo.sceneNumero ?? ''}
+              onChange={(e) =>
+                setNovo((n) => ({
+                  ...n,
+                  sceneNumero: e.target.value ? Number(e.target.value) : null,
+                }))
+              }
+              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+            >
+              <option value="">Sem cena específica</option>
+              {cenas.map((n) => (
+                <option key={n} value={n}>
+                  Cena {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="visual-titulo">Título</Label>
+            <Input
+              id="visual-titulo"
+              value={novo.titulo}
+              onChange={(e) => setNovo((n) => ({ ...n, titulo: e.target.value }))}
+              placeholder="Ex.: Divisão territorial de 1942"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="visual-periodo">Período</Label>
+            <Input
+              id="visual-periodo"
+              value={novo.periodo}
+              onChange={(e) => setNovo((n) => ({ ...n, periodo: e.target.value }))}
+              placeholder="Ex.: 1942 ou 1930–1945"
+              className="mt-1"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="visual-desc">O que o elemento deve mostrar</Label>
+            <Textarea
+              id="visual-desc"
+              value={novo.descricao}
+              onChange={(e) => setNovo((n) => ({ ...n, descricao: e.target.value }))}
+              placeholder="Ex.: mapa do Brasil com os estados e territórios da época, destacando a divisão regional então vigente."
+              className="mt-1 min-h-16"
+            />
+          </div>
         </div>
-        <div>
-          <Label htmlFor="visual-cena">Cena (opcional)</Label>
-          <select
-            id="visual-cena"
-            value={novo.sceneNumero ?? ''}
-            onChange={(e) =>
-              setNovo((n) => ({
-                ...n,
-                sceneNumero: e.target.value ? Number(e.target.value) : null,
-              }))
-            }
-            className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="">Sem cena específica</option>
-            {cenas.map((n) => (
-              <option key={n} value={n}>
-                Cena {n}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="visual-titulo">Título</Label>
-          <Input
-            id="visual-titulo"
-            value={novo.titulo}
-            onChange={(e) => setNovo((n) => ({ ...n, titulo: e.target.value }))}
-            placeholder="Ex.: Divisão territorial de 1942"
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="visual-periodo">Período</Label>
-          <Input
-            id="visual-periodo"
-            value={novo.periodo}
-            onChange={(e) => setNovo((n) => ({ ...n, periodo: e.target.value }))}
-            placeholder="Ex.: 1942 ou 1930–1945"
-            className="mt-1"
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <Label htmlFor="visual-desc">O que o elemento deve mostrar</Label>
-          <Textarea
-            id="visual-desc"
-            value={novo.descricao}
-            onChange={(e) => setNovo((n) => ({ ...n, descricao: e.target.value }))}
-            placeholder="Ex.: mapa do Brasil com os estados e territórios da época, destacando a divisão regional então vigente."
-            className="mt-1 min-h-16"
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <Button variant="ai" size="sm" onClick={criar} disabled={criando || ativos.length > 0}>
-            {criando ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            {criando ? 'Criando...' : 'Criar e gerar imagem'}
-          </Button>
-        </div>
-      </div>
+      </Dialog>
 
       <input
         ref={inputArquivo}
@@ -256,7 +289,8 @@ export function VisualAssetsCard({
 
       {data.assets.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Nenhum mapa ou linha do tempo ainda. Descreva o elemento acima para gerar o primeiro.
+          Nenhum mapa ou linha do tempo ainda. Use <strong>Novo mapa ou linha do tempo</strong> para
+          gerar o primeiro.
         </p>
       ) : (
         <ul className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -286,7 +320,10 @@ export function VisualAssetsCard({
                     <img
                       src={`${API_URL}/visual/${a.id}/image?v=${encodeURIComponent(a.versao)}`}
                       alt={`${ROTULO_VISUAL[a.tipo]}: ${a.titulo || a.descricao}`}
-                      className={cn('w-full object-cover', a.tipo === 'linha-do-tempo' ? 'aspect-video' : 'aspect-[4/3]')}
+                      className={cn(
+                        'w-full object-cover',
+                        a.tipo === 'linha-do-tempo' ? 'aspect-video' : 'aspect-[4/3]',
+                      )}
                     />
                   ) : (
                     <div className="flex aspect-video items-center justify-center text-muted-foreground">
@@ -350,7 +387,9 @@ export function VisualAssetsCard({
                     size="sm"
                     variant="ghost"
                     disabled={gerando || ativos.length > 0}
-                    onClick={() => executar(() => post<VisualAssetsResponse>(`/visual/${a.id}/regenerate`))}
+                    onClick={() =>
+                      executar(() => post<VisualAssetsResponse>(`/visual/${a.id}/regenerate`))
+                    }
                   >
                     <RefreshCw className="size-4" /> Refazer
                   </Button>

@@ -35,7 +35,7 @@ Responda somente em JSON com exatamente 5 itens: [{"texto": string, "estilo": st
 function regrasFormato(formato: Formato): string {
   return formato === 'shorts'
     ? 'Divida em cenas de 3 a 8 segundos (Shorts, vertical). A primeira cena é um gancho forte nos 3 primeiros segundos.'
-    : 'Divida em cenas de 10 a 25 segundos. A primeira cena é um gancho.';
+    : 'Divida em cenas de 18 a 25 segundos. Nenhuma cena pode ter menos de 18 segundos de narração. A primeira cena é um gancho.';
 }
 
 /** Ângulos de abertura sorteados a cada geração para o roteiro não repetir a mesma entrada. */
@@ -224,7 +224,7 @@ export function promptRoteiroExterno(p: {
 }): string {
   const [min, max] = LIMITES_FORMATO[p.formato].cena;
   const totalSegundos = p.duracaoMinutos * 60;
-  // Duração média arredondada (ex.: 15 min → 50 cenas de 18 s).
+  // Duração média arredondada (ex.: 15 min → 41 cenas de ~22 s).
   const media = Math.round((min + max) / 2);
   const cenas = Math.max(1, Math.min(400, Math.round(totalSegundos / media)));
   // Ajuste fino para a soma bater perto da duração alvo.

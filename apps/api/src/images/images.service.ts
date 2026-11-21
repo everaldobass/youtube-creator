@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Job, Scene } from '@prisma/client';
 import { createHash } from 'crypto';
 import { ImagesResponse, ProjectDto, UploadImageInput } from '@yt/shared';
@@ -17,6 +23,9 @@ const proporcaoDe = (p: ProjectDto): '16:9' | '9:16' => (p.formato === 'shorts' 
 
 @Injectable()
 export class ImagesService implements OnModuleInit {
+  /** Progresso da verificação em memória (some se a API reiniciar; o job também some). */
+  private readonly verificacao = new Map<string, { feitas: number; total: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
@@ -41,11 +50,19 @@ export class ImagesService implements OnModuleInit {
 
   async response(projectId: string): Promise<ImagesResponse> {
     const project = await this.projects.get(projectId);
-    const rows = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const rows = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
+    const progresso = this.verificacao.get(projectId);
     return {
       estiloVisual: project.estiloVisual,
       proporcao: proporcaoDe(project),
       scenes: rows.map((s) => ({ ...toSceneDto(s), promptImagem: this.promptDa(project, s) })),
+      verificacaoProgresso:
+        progresso && progresso.total > 0
+          ? Math.min(100, Math.round((progresso.feitas / progresso.total) * 100))
+          : null,
       jobs: [
         ...(await this.jobs.listar(projectId, ['imagem'])),
         ...(await this.jobs.listar(projectId, ['verificacao'])),
@@ -101,37 +118,49 @@ export class ImagesService implements OnModuleInit {
 
     // 2) Conferência visual, em lotes pequenos para não estourar a fila da IA.
     const alertas = new Map<number, string>();
-    for (const c of comImagem) {
-      const buf = dados.get(c.numero)!;
-      const mime = EXT_PARA_MIME[extDaChave(c.imagemPath!)] ?? 'image/png';
-      const resultado = await this.ai.generateJsonWithImages(
-        promptVerificacaoImagem({
-          numero: c.numero,
-          textoNarrado: c.textoNarrado,
-          descricaoVisual: c.descricaoVisual,
-          estiloVisual: project.estiloVisual,
-        }),
-        verificacaoImagemGenSchema,
-        [{ data: buf, mime }],
-      );
-      const partes: string[] = [];
-      if (repetidas.has(c.numero)) {
-        partes.push(`Imagem idêntica à(s) cena(s) ${repetidas.get(c.numero)!.join(', ')}.`);
-      }
-      if (!resultado.corresponde || resultado.tipo !== 'ok') {
-        partes.push(
-          `[${resultado.tipo}] ${resultado.motivo}${resultado.sugestao ? ` Sugestão: ${resultado.sugestao}` : ''}`,
+    const total = comImagem.length;
+    this.verificacao.set(projectId, { feitas: 0, total });
+    try {
+      let feitas = 0;
+      for (const c of comImagem) {
+        const buf = dados.get(c.numero)!;
+        const mime = EXT_PARA_MIME[extDaChave(c.imagemPath!)] ?? 'image/png';
+        const resultado = await this.ai.generateJsonWithImages(
+          promptVerificacaoImagem({
+            numero: c.numero,
+            textoNarrado: c.textoNarrado,
+            descricaoVisual: c.descricaoVisual,
+            estiloVisual: project.estiloVisual,
+          }),
+          verificacaoImagemGenSchema,
+          [{ data: buf, mime }],
         );
+        const partes: string[] = [];
+        if (repetidas.has(c.numero)) {
+          partes.push(`Imagem idêntica à(s) cena(s) ${repetidas.get(c.numero)!.join(', ')}.`);
+        }
+        if (!resultado.corresponde || resultado.tipo !== 'ok') {
+          partes.push(
+            `[${resultado.tipo}] ${resultado.motivo}${resultado.sugestao ? ` Sugestão: ${resultado.sugestao}` : ''}`,
+          );
+        }
+        if (partes.length) alertas.set(c.numero, partes.join(' ').slice(0, 1000));
+        feitas += 1;
+        this.verificacao.set(projectId, { feitas, total });
       }
-      if (partes.length) alertas.set(c.numero, partes.join(' ').slice(0, 1000));
-    }
 
-    await this.prisma.$transaction([
-      this.prisma.scene.updateMany({ where: { projectId }, data: { alertaImagem: '' } }),
-      ...[...alertas.entries()].map(([numero, alerta]) =>
-        this.prisma.scene.updateMany({ where: { projectId, numero }, data: { alertaImagem: alerta } }),
-      ),
-    ]);
+      await this.prisma.$transaction([
+        this.prisma.scene.updateMany({ where: { projectId }, data: { alertaImagem: '' } }),
+        ...[...alertas.entries()].map(([numero, alerta]) =>
+          this.prisma.scene.updateMany({
+            where: { projectId, numero },
+            data: { alertaImagem: alerta },
+          }),
+        ),
+      ]);
+    } finally {
+      this.verificacao.delete(projectId);
+    }
   }
 
   /**
@@ -139,9 +168,15 @@ export class ImagesService implements OnModuleInit {
    * gerar no Google Flow/Nano Banana e salvar cada arquivo com o número da cena.
    * As imagens já geradas entram no documento como prévia (URL absoluta).
    */
-  async promptsMarkdown(projectId: string, baseUrl = ''): Promise<{ nome: string; markdown: string }> {
+  async promptsMarkdown(
+    projectId: string,
+    baseUrl = '',
+  ): Promise<{ nome: string; markdown: string }> {
     const project = await this.projects.get(projectId);
-    const rows = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const rows = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
     const titulo = project.tituloEscolhido.trim() || 'vídeo sem título';
     const base =
       titulo
@@ -173,10 +208,14 @@ export class ImagesService implements OnModuleInit {
     for (const cena of rows) {
       const numero = String(cena.numero).padStart(3, '0');
       const bloco = [`## Cena ${cena.numero}`, '', `**Arquivo sugerido:** \`cena-${numero}.png\``];
-      if (cena.descricaoVisual.trim()) bloco.push('', `**Descrição visual:** ${cena.descricaoVisual.trim()}`);
+      if (cena.descricaoVisual.trim())
+        bloco.push('', `**Descrição visual:** ${cena.descricaoVisual.trim()}`);
       if (cena.imagemPath) {
         const url = `${baseUrl}/scenes/${cena.id}/image?v=${cena.versaoMidia}`;
-        bloco.push('', `**Imagem atual:** ${baseUrl ? `![Cena ${cena.numero}](${url})` : `\`${url}\``}`);
+        bloco.push(
+          '',
+          `**Imagem atual:** ${baseUrl ? `![Cena ${cena.numero}](${url})` : `\`${url}\``}`,
+        );
       }
       bloco.push('', '**Prompt:**', '', '```text', this.promptDa(project, cena), '```');
       linhas.push('', ...bloco);
@@ -191,7 +230,10 @@ export class ImagesService implements OnModuleInit {
    */
   async promptImgMarkdown(projectId: string): Promise<{ nome: string; markdown: string }> {
     const project = await this.projects.get(projectId);
-    const rows = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const rows = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
     const linhas = [
       'Observação: Criar as imagens e renomear referente a cena que ela pertence.',
       `Proporção: ${proporcaoDe(project)}`,
@@ -235,12 +277,17 @@ export class ImagesService implements OnModuleInit {
 
   async generateAll(projectId: string, todas = false): Promise<ImagesResponse> {
     await this.projects.get(projectId);
-    const cenas = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const cenas = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
     if (cenas.length === 0) throw new BadRequestException('Gere o roteiro antes das imagens.');
     const vazias = cenas.filter((c) => !c.descricaoVisual.trim()).map((c) => c.numero);
-    if (vazias.length) throw new BadRequestException(`Há cenas sem descrição visual: ${vazias.join(', ')}.`);
+    if (vazias.length)
+      throw new BadRequestException(`Há cenas sem descrição visual: ${vazias.join(', ')}.`);
     for (const c of cenas) {
-      const precisa = !c.imagemPath || c.statusImagem === 'pendente' || c.statusImagem === 'desatualizado';
+      const precisa =
+        !c.imagemPath || c.statusImagem === 'pendente' || c.statusImagem === 'desatualizado';
       if (todas || precisa) await this.jobs.enqueue(projectId, 'imagem', c.id);
     }
     return this.response(projectId);
@@ -268,7 +315,12 @@ export class ImagesService implements OnModuleInit {
     }
     await this.prisma.scene.update({
       where: { id: scene.id },
-      data: { imagemPath: chave, statusImagem: 'gerado', versaoMidia: { increment: 1 }, alertaImagem: '' },
+      data: {
+        imagemPath: chave,
+        statusImagem: 'gerado',
+        versaoMidia: { increment: 1 },
+        alertaImagem: '',
+      },
     });
   }
 
@@ -277,7 +329,8 @@ export class ImagesService implements OnModuleInit {
     const scene = await this.prisma.scene.findUnique({ where: { id: sceneId } });
     if (!scene) return;
     const project = await this.projects.get(scene.projectId);
-    if (!scene.descricaoVisual.trim()) throw new Error(`A cena ${scene.numero} não tem descrição visual.`);
+    if (!scene.descricaoVisual.trim())
+      throw new Error(`A cena ${scene.numero} não tem descrição visual.`);
     const img = await this.ai.generateImage(this.promptDa(project, scene), proporcaoDe(project));
     await this.salvar(scene, img.data, img.mime);
   }
@@ -305,7 +358,9 @@ export class ImagesService implements OnModuleInit {
     await this.projects.get(projectId);
     const cenas = await this.prisma.scene.findMany({ where: { projectId } });
     const pendentes = cenas
-      .filter((c) => !c.imagemPath || c.statusImagem === 'pendente' || c.statusImagem === 'desatualizado')
+      .filter(
+        (c) => !c.imagemPath || c.statusImagem === 'pendente' || c.statusImagem === 'desatualizado',
+      )
       .map((c) => c.numero);
     if (cenas.length === 0 || pendentes.length) {
       throw new BadRequestException(
@@ -314,7 +369,10 @@ export class ImagesService implements OnModuleInit {
           : `Falta imagem atualizada nas cenas: ${pendentes.join(', ')}.`,
       );
     }
-    await this.prisma.scene.updateMany({ where: { projectId }, data: { statusImagem: 'aprovado' } });
+    await this.prisma.scene.updateMany({
+      where: { projectId },
+      data: { statusImagem: 'aprovado' },
+    });
     return this.response(projectId);
   }
 }

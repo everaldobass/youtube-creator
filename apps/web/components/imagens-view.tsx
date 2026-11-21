@@ -89,6 +89,10 @@ export function ImagensView({
   const inputPasta = useRef<HTMLInputElement>(null);
 
   const ativos = jobsAtivos(data.jobs);
+  const verificando = data.jobs.some(
+    (j) => j.tipo === 'verificacao' && (j.status === 'fila' || j.status === 'executando'),
+  );
+  const progressoVerificacao = data.verificacaoProgresso ?? 0;
   const carregar = useCallback(async () => {
     setData(await apiFetch<ImagesResponse>(`/projects/${projectId}/images`));
   }, [projectId]);
@@ -292,36 +296,50 @@ export function ImagensView({
                 {comAlerta.length} cena(s) com alerta de correspondência entre narração e imagem.
               </p>
             )}
-            {ativos.length > 0 && (
-              <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                <ScanSearch className="size-3 animate-pulse" /> Verificação de imagens em andamento...
-              </p>
+            {verificando && (
+              <div className="mt-2 max-w-xs">
+                <p className="flex items-center gap-1 text-xs text-ai-soft" aria-live="polite">
+                  <ScanSearch className="size-3 animate-pulse" /> Verificação de imagens em
+                  andamento... {progressoVerificacao}%
+                </p>
+                <div className="mt-1 h-1.5 w-56 overflow-hidden rounded-full bg-panel">
+                  <div
+                    className="h-full rounded-full bg-ai transition-all"
+                    style={{ width: `${progressoVerificacao}%` }}
+                  />
+                </div>
+              </div>
             )}
             {subindoPasta && progressoPasta && (
               <p className="mt-2 flex items-center gap-1 text-xs text-ai-soft">
                 <Upload className="size-3 animate-pulse" /> Enviando imagens: {progressoPasta.atual}{' '}
-                de {progressoPasta.total}...
+                de {progressoPasta.total} —{' '}
+                {Math.round((progressoPasta.atual / progressoPasta.total) * 100)}%
               </p>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
+              className="border-info/70 hover:border-info hover:bg-info/10"
               disabled={enviando || subindoPasta || ativos.length > 0}
               onClick={abrirPasta}
               title="Escolha a pasta; o número no nome do arquivo (cena-001...) define a cena."
             >
-              <FolderUp className="size-4" />
+              <FolderUp className="size-4 text-info" />
               {subindoPasta && progressoPasta
                 ? `Enviando ${progressoPasta.atual} de ${progressoPasta.total}...`
                 : 'Enviar pasta de imagens'}
             </Button>
             <Button
               variant="outline"
+              className="border-ai-soft/70 hover:border-ai-soft hover:bg-ai/10"
               disabled={enviando || subindoPasta || ativos.length > 0 || prontas === 0}
-              onClick={() => executar(() => post<ImagesResponse>(`/projects/${projectId}/images/verify`))}
+              onClick={() =>
+                executar(() => post<ImagesResponse>(`/projects/${projectId}/images/verify`))
+              }
             >
-              <ScanSearch className="size-4" /> Verificar correspondência
+              <ScanSearch className="size-4 text-ai-soft" /> Verificar correspondência
             </Button>
             <Button variant="outline" asChild>
               <a href={`${API_URL}/projects/${projectId}/images/prompts.md`}>

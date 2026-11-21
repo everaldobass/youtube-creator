@@ -1,6 +1,12 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Job, Scene } from '@prisma/client';
-import { AudioVersaoDto, Idioma, NarrationResponse } from '@yt/shared';
+import { AudioVersaoDto, Idioma, NarrationResponse, calcularResumoRoteiro } from '@yt/shared';
 import { AiService } from '../ai/ai.service';
 import { JobsService } from '../jobs/jobs.service';
 import { chaveAudio } from '../media/files';
@@ -34,14 +40,21 @@ export class NarrationService implements OnModuleInit {
 
   async response(projectId: string): Promise<NarrationResponse> {
     const project = await this.projects.get(projectId);
-    const rows = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const rows = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
+    const scenes = rows.map(toSceneDto);
     return {
       vozNome: project.vozNome,
       vozInstrucaoTom: project.vozInstrucaoTom,
-      narracaoNatural: project.narracaoNatural,
+      formato: project.formato,
+      // A narração mais humana fica sempre ativa neste projeto.
+      narracaoNatural: true,
       narracaoVelocidade: project.narracaoVelocidade,
       pronuncia: project.pronuncia,
-      scenes: rows.map(toSceneDto),
+      scenes,
+      resumo: calcularResumoRoteiro(scenes, project.formato, project.duracaoMinutos),
       jobs: await this.jobs.listar(projectId, ['narracao']),
     };
   }
@@ -49,14 +62,18 @@ export class NarrationService implements OnModuleInit {
   /** Enfileira as cenas sem narração ou desatualizadas (ou todas, se pedido). */
   async generateAll(projectId: string, todas = false): Promise<NarrationResponse> {
     await this.projects.get(projectId);
-    const cenas = await this.prisma.scene.findMany({ where: { projectId }, orderBy: { numero: 'asc' } });
+    const cenas = await this.prisma.scene.findMany({
+      where: { projectId },
+      orderBy: { numero: 'asc' },
+    });
     if (cenas.length === 0) throw new BadRequestException('Gere o roteiro antes da narração.');
     const vazias = cenas.filter((c) => !c.textoNarrado.trim()).map((c) => c.numero);
     if (vazias.length) {
       throw new BadRequestException(`Há cenas sem texto narrado: ${vazias.join(', ')}.`);
     }
     for (const c of cenas) {
-      const precisa = !c.audioPath || c.statusNarracao === 'pendente' || c.statusNarracao === 'desatualizado';
+      const precisa =
+        !c.audioPath || c.statusNarracao === 'pendente' || c.statusNarracao === 'desatualizado';
       if (todas || precisa) await this.jobs.enqueue(projectId, 'narracao', c.id);
     }
     return this.response(projectId);
@@ -83,12 +100,10 @@ export class NarrationService implements OnModuleInit {
     const texto = scene.textoNarrado.trim();
     if (!texto) throw new Error(`A cena ${scene.numero} não tem texto narrado.`);
 
-    const preparado = project.narracaoNatural
-      ? textoParaNarracao(textoFalado(texto), project.pronuncia)
-      : textoFalado(texto);
+    const preparado = textoParaNarracao(textoFalado(texto), project.pronuncia);
     const audio = await this.ai.generateSpeech(
       preparado,
-      project.narracaoNatural,
+      true,
       project.idioma,
       project.narracaoVelocidade,
     );
@@ -163,7 +178,11 @@ export class NarrationService implements OnModuleInit {
   /** Aprovação individual da cena (a etapa aceita aprovar todas de uma vez). */
   async aprovarCena(sceneId: string): Promise<NarrationResponse> {
     const scene = await this.getScene(sceneId);
-    if (!scene.audioPath || scene.statusNarracao === 'desatualizado' || scene.statusNarracao === 'pendente') {
+    if (
+      !scene.audioPath ||
+      scene.statusNarracao === 'desatualizado' ||
+      scene.statusNarracao === 'pendente'
+    ) {
       throw new BadRequestException(`A cena ${scene.numero} ainda não tem narração atualizada.`);
     }
     await this.prisma.scene.update({
@@ -192,8 +211,8 @@ export class NarrationService implements OnModuleInit {
     const project = await this.projects.get(projectId);
     const frase = FRASES_DE_TESTE[project.idioma] ?? FRASES_DE_TESTE['pt-BR'];
     const audio = await this.ai.generateSpeech(
-      project.narracaoNatural ? textoParaNarracao(frase, project.pronuncia) : frase,
-      project.narracaoNatural,
+      textoParaNarracao(frase, project.pronuncia),
+      true,
       project.idioma,
       project.narracaoVelocidade,
     );
@@ -204,7 +223,10 @@ export class NarrationService implements OnModuleInit {
     await this.projects.get(projectId);
     const cenas = await this.prisma.scene.findMany({ where: { projectId } });
     const pendentes = cenas
-      .filter((c) => !c.audioPath || c.statusNarracao === 'pendente' || c.statusNarracao === 'desatualizado')
+      .filter(
+        (c) =>
+          !c.audioPath || c.statusNarracao === 'pendente' || c.statusNarracao === 'desatualizado',
+      )
       .map((c) => c.numero);
     if (cenas.length === 0 || pendentes.length) {
       throw new BadRequestException(
@@ -213,7 +235,10 @@ export class NarrationService implements OnModuleInit {
           : `Falta narração atualizada nas cenas: ${pendentes.join(', ')}.`,
       );
     }
-    await this.prisma.scene.updateMany({ where: { projectId }, data: { statusNarracao: 'aprovado' } });
+    await this.prisma.scene.updateMany({
+      where: { projectId },
+      data: { statusNarracao: 'aprovado' },
+    });
     return this.response(projectId);
   }
 }

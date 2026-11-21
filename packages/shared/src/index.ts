@@ -34,7 +34,8 @@ export const IDIOMA_INFO: Record<Idioma, { rotulo: string; curto: string; exempl
 
 /** Limites por formato (documento original, seção 1). */
 export const LIMITES_FORMATO = {
-  longo: { maxMinutos: 30, cena: [10, 25], resolucao: '1920x1080', proporcao: '16:9' },
+  // Cada cena longa precisa de pelo menos 18 s de narração para ter respiro e contexto.
+  longo: { maxMinutos: 30, cena: [18, 25], resolucao: '1920x1080', proporcao: '16:9' },
   shorts: { maxMinutos: 3, cena: [3, 8], resolucao: '1080x1920', proporcao: '9:16' },
 } as const;
 
@@ -151,7 +152,7 @@ export const createProjectSchema = z.object({
     .default(97),
   pronuncia: z.string().max(2000).default(''),
   efeitoCamera: z.enum(EFEITO_CAMERA_SLUGS).default('alternado'),
-  usarCameraSugerida: z.boolean().default(false),
+  usarCameraSugerida: z.boolean().default(true),
   legendasAtivas: z.boolean().default(true),
   legendaTamanho: z.number().int().min(60).max(160).default(100),
   legendaPosicao: z.enum(LEGENDA_POSICOES).default('baixo'),
@@ -413,10 +414,13 @@ export interface JobDto {
 export interface NarrationResponse {
   vozNome: string;
   vozInstrucaoTom: string;
+  formato: Formato;
   narracaoNatural: boolean;
   narracaoVelocidade: number;
   pronuncia: string;
   scenes: SceneDto[];
+  /** Mesmo resumo da etapa de roteiro (cenas, tempo total e margem de 10%). */
+  resumo: RoteiroResumo;
   jobs: JobDto[];
 }
 
@@ -432,6 +436,8 @@ export interface ImagesResponse {
   estiloVisual: string;
   proporcao: '16:9' | '9:16';
   scenes: (SceneDto & { promptImagem: string })[];
+  /** Progresso (0 a 100) da verificação de correspondência em andamento. */
+  verificacaoProgresso: number | null;
   jobs: JobDto[];
 }
 
@@ -480,6 +486,8 @@ export interface DescriptionResponse {
 
 export interface ExportResponse {
   mp4: { status: JobStatus; atualizadoEm: string; erro: string | null } | null;
+  /** Progresso (0 a 100) da montagem em andamento; null quando não há montagem ativa. */
+  progresso: number | null;
   jobs: JobDto[];
   /** Números das cenas que ainda não têm narração ou imagem. */
   faltando: number[];
@@ -943,14 +951,19 @@ export const projetoPacoteDefinicoesSchema = z.object({
     .default('3D estilizado, cores quentes, iluminação suave, sem texto na imagem'),
   descricao: z.string().max(5000).default(''),
   efeitoCamera: z.enum(EFEITO_CAMERA_SLUGS).default('alternado'),
-  usarCameraSugerida: z.boolean().default(false),
+  usarCameraSugerida: z.boolean().default(true),
   legendasAtivas: z.boolean().default(true),
   legendaTamanho: z.number().int().min(60).max(160).default(100),
   legendaPosicao: z.enum(LEGENDA_POSICOES).default('baixo'),
   legendaEstilo: z.enum(LEGENDA_ESTILOS).default('negrito'),
   legendaFonte: z.string().max(60).default('Noto Sans'),
-  legendaCor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#C4B5FD'),
-  editorialStatus: z.enum(['nao_revisado', 'aprovado', 'ressalvas', 'correcao']).default('nao_revisado'),
+  legendaCor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#C4B5FD'),
+  editorialStatus: z
+    .enum(['nao_revisado', 'aprovado', 'ressalvas', 'correcao'])
+    .default('nao_revisado'),
   roteiroManual: z.boolean().default(false),
   fontesRoteiro: z.string().max(20000).default(''),
   revisaoFinalEm: z.string().nullable().default(null),

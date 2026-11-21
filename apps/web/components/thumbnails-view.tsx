@@ -146,7 +146,7 @@ export function ThumbnailsView({
     <div className="mx-auto w-full">
       <StepHeader
         etapa="Etapa 7 de 9"
-        title="Thumbnails | Google Flow | CTR"
+        title="Thumbnails, Google Flow e CTR"
         description="Duas variações em 1280×720 para comparar. Copie o prompt, gere a imagem no Flow/Nano Banana e envie o arquivo."
         actions={
           <Button variant="ai" onClick={gerarTodas} disabled={gerando}>

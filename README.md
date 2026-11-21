@@ -1,5 +1,8 @@
 # YouStudio — Criador de Vídeos YouTube
 
+# Desbloquear porta
+- fuser -k 3001/tcp
+
 App web fullstack (MVP): do título ao vídeo pronto para o YouTube, em 9 etapas.
 
 - **Web:** Next.js (App Router) + Tailwind CSS + shadcn/ui, tema "Studio Red Stream"

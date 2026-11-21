@@ -133,7 +133,7 @@ export function VideoView({
             <Button onClick={montar} disabled={!podeMontar || enviando}>
               <Film className="size-4" />
               {montando
-                ? 'Montando o vídeo...'
+                ? `Montando o vídeo... ${status.progresso ?? 0}%`
                 : pronto
                   ? 'Montar de novo'
                   : 'Exportar vídeo (MP4)'}
@@ -175,10 +175,30 @@ export function VideoView({
         </div>
       )}
       {montando && (
-        <p className="mt-4 text-xs text-muted-foreground" aria-live="polite">
-          A montagem roda no servidor e pode levar alguns minutos. Pode sair desta tela: o processo
-          continua.
-        </p>
+        <div
+          className="mt-4 rounded-xl border border-brand/40 bg-brand/5 p-4"
+          aria-live="polite"
+          role="status"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <Film className="size-4 text-brand-soft" /> Montando o vídeo...
+            </p>
+            <span className="text-2xl font-semibold tabular-nums text-brand-soft">
+              {status.progresso ?? 0}%
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel">
+            <div
+              className="h-full rounded-full bg-brand transition-all"
+              style={{ width: `${status.progresso ?? 0}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            A montagem roda no servidor e pode levar alguns minutos. Pode sair desta tela: o
+            processo continua.
+          </p>
+        </div>
       )}
       {pronto && !montando && (
         <div className="mt-4 flex flex-wrap items-center gap-2">

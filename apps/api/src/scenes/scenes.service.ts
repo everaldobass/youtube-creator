@@ -110,7 +110,11 @@ export function fontesDoProjeto(project: ProjectDto): FonteRoteiro[] {
 const desatualizar = (status: string): string =>
   status === 'gerado' || status === 'aprovado' ? 'desatualizado' : status;
 
-const limitarDuracao = (n: number) => Math.min(120, Math.max(1, Math.round(n)));
+/** Duração planejada da cena, respeitando o mínimo do formato (18 s nos vídeos longos). */
+const limitarDuracao = (n: number, formato: ProjectDto['formato']) => {
+  const minimo = LIMITES_FORMATO[formato].cena[0];
+  return Math.min(120, Math.max(minimo, Math.round(n)));
+};
 
 /** Fonte como vem da IA; os campos opcionais são normalizados ao exportar. */
 interface FonteGerada {
@@ -128,14 +132,17 @@ interface CenaNormalizada {
 }
 
 /** Normaliza uma cena vinda da IA para o formato salvo no banco. */
-const normalizarCena = (c: {
-  textoNarrado: string;
-  duracaoSegundos: number;
-  descricaoVisual: string;
-  movimentoCamera?: string;
-}): CenaNormalizada => ({
+const normalizarCena = (
+  c: {
+    textoNarrado: string;
+    duracaoSegundos: number;
+    descricaoVisual: string;
+    movimentoCamera?: string;
+  },
+  formato: ProjectDto['formato'],
+): CenaNormalizada => ({
   textoNarrado: c.textoNarrado.trim(),
-  duracaoSegundos: limitarDuracao(c.duracaoSegundos),
+  duracaoSegundos: limitarDuracao(c.duracaoSegundos, formato),
   descricaoVisual: c.descricaoVisual.trim(),
   sugestaoCamera: cameraValida(c.movimentoCamera),
 });
@@ -373,7 +380,7 @@ export class ScenesService {
     );
 
     const cenas: CenaNormalizada[] = primeira.cenas
-      .map(normalizarCena)
+      .map((c) => normalizarCena(c, project.formato))
       .filter(semFechamentoPrecoce);
     const fontes: FonteGerada[] = [...(primeira.fontes ?? [])];
     const totalSegundos = () => cenas.reduce((n, c) => n + c.duracaoSegundos, 0);
@@ -416,7 +423,11 @@ export class ScenesService {
 
       chamadas += 1;
       const antes = totalSegundos();
-      cenas.push(...continuacao.cenas.map(normalizarCena).filter(semFechamentoPrecoce));
+      cenas.push(
+        ...continuacao.cenas
+          .map((c) => normalizarCena(c, project.formato))
+          .filter(semFechamentoPrecoce),
+      );
       fontes.push(...(continuacao.fontes ?? []));
       if (totalSegundos() <= antes) semProgresso += 1;
       else semProgresso = 0;
@@ -442,7 +453,9 @@ export class ScenesService {
           roteiroGenSchema,
         );
         const limiteCenas = project.formato === 'shorts' ? 1 : 2;
-        cenas.push(...fechamento.cenas.map(normalizarCena).slice(0, limiteCenas));
+        cenas.push(
+          ...fechamento.cenas.map((c) => normalizarCena(c, project.formato)).slice(0, limiteCenas),
+        );
         fontes.push(...(fechamento.fontes ?? []));
       } catch (e) {
         const motivo = e instanceof Error ? e.message : 'erro inesperado';
@@ -513,7 +526,7 @@ export class ScenesService {
    * como manual — a revisão editorial por IA passa a ser opcional.
    */
   async importar(projectId: string, markdown: string): Promise<ImportRoteiroResponse> {
-    await this.projects.get(projectId); // valida o dono
+    const project = await this.projects.get(projectId); // valida o dono
     const { cenas, fontes, avisos } = lerRoteiroMarkdown(markdown);
 
     if (cenas.length === 0) {
@@ -540,7 +553,7 @@ export class ScenesService {
           projectId,
           numero: i + 1,
           textoNarrado: c.textoNarrado,
-          duracaoSegundos: limitarDuracao(c.duracaoSegundos),
+          duracaoSegundos: limitarDuracao(c.duracaoSegundos, project.formato),
           descricaoVisual: c.descricaoVisual,
         })),
       }),
@@ -577,7 +590,7 @@ export class ScenesService {
       data: {
         projectId,
         numero: existentes.length + 1,
-        duracaoSegundos: project.formato === 'shorts' ? 5 : 15,
+        duracaoSegundos: project.formato === 'shorts' ? 5 : LIMITES_FORMATO.longo.cena[0],
       },
     });
     const ids = existentes.map((s) => s.id);
@@ -624,7 +637,7 @@ export class ScenesService {
       data.alertaImagem = input.alertaImagem;
     }
     if (input.duracaoSegundos !== undefined && input.duracaoSegundos !== scene.duracaoSegundos) {
-      data.duracaoSegundos = input.duracaoSegundos;
+      data.duracaoSegundos = limitarDuracao(input.duracaoSegundos, project.formato);
     }
 
     const atualizada = Object.keys(data).length
@@ -691,7 +704,7 @@ export class ScenesService {
       where: { id: sceneId },
       data: {
         textoNarrado: nova.textoNarrado.trim(),
-        duracaoSegundos: limitarDuracao(nova.duracaoSegundos),
+        duracaoSegundos: limitarDuracao(nova.duracaoSegundos, project.formato),
         descricaoVisual: nova.descricaoVisual.trim(),
         sugestaoCamera: cameraValida(nova.movimentoCamera) || scene.sugestaoCamera,
         statusNarracao: desatualizar(scene.statusNarracao),
