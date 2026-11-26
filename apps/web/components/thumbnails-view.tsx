@@ -2,9 +2,10 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Copy, Download, ImageIcon, Sparkles, Upload } from 'lucide-react';
+import { Check, Copy, Download, FileDown, ImageIcon, Sparkles, Upload } from 'lucide-react';
 import {
   MAX_PALAVRAS_THUMB,
+  TOTAL_THUMBNAILS,
   contarPalavras,
   type ThumbnailDto,
   type ThumbnailsResponse,
@@ -35,6 +36,7 @@ export function ThumbnailsView({
   );
   const [gerando, setGerando] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const [copiado, setCopiado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [continuando, setContinuando] = useState(false);
@@ -89,6 +91,39 @@ export function ThumbnailsView({
       setTimeout(() => setCopiado(null), 2000);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível copiar o prompt.');
+    }
+  }
+
+  /** Salva os textos editados (se mudaram) e baixa todos os prompts em um único arquivo. */
+  async function exportarPrompts() {
+    setErro(null);
+    setExportando(true);
+    try {
+      let atual = data;
+      for (const t of data.thumbnails) {
+        const texto = (textos[t.id] ?? '').trim();
+        if (texto && texto !== t.textoNaImagem) {
+          atual = await patch<ThumbnailsResponse>(`/thumbnails/${t.id}`, { textoNaImagem: texto });
+        }
+      }
+      setData(atual);
+      if (atual.thumbnails.length === 0) return;
+      const conteudo = atual.thumbnails
+        .map((t) => `# Variação ${t.variacao} — ${t.textoNaImagem}\n\n${t.promptImagem}`)
+        .join(`\n\n${'-'.repeat(60)}\n\n`);
+      const blob = new Blob([`${conteudo}\n`], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'prompts-thumbnails.txt';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível exportar os prompts.');
+    } finally {
+      setExportando(false);
     }
   }
 
@@ -147,12 +182,22 @@ export function ThumbnailsView({
       <StepHeader
         etapa="Etapa 7 de 9"
         title="Thumbnails, Google Flow e CTR"
-        description="Duas variações em 1280×720 para comparar. Copie o prompt, gere a imagem no Flow/Nano Banana e envie o arquivo."
+        description="Quatro variações em 1280×720 para comparar. Copie o prompt, gere a imagem no Flow/Nano Banana e envie o arquivo."
         actions={
-          <Button variant="ai" onClick={gerarTodas} disabled={gerando}>
-            <Sparkles className="size-4" />
-            {gerando ? 'Gerando thumbnail...' : 'Gerar thumbnail'}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={exportarPrompts}
+              disabled={exportando || data.thumbnails.length === 0}
+            >
+              <FileDown className="size-4" />
+              {exportando ? 'Exportando...' : 'Exportar prompts'}
+            </Button>
+            <Button variant="ai" onClick={gerarTodas} disabled={gerando}>
+              <Sparkles className="size-4" />
+              {gerando ? 'Gerando thumbnail...' : 'Gerar thumbnail'}
+            </Button>
+          </>
         }
       />
 
@@ -174,7 +219,8 @@ export function ThumbnailsView({
         <Card className="mt-6 p-8 text-center">
           <p className="font-medium">Nenhuma thumbnail ainda</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            O app sugere 2 textos curtos. Gere as imagens onde preferir (1280×720) e envie aqui.
+            O app sugere {TOTAL_THUMBNAILS} textos curtos. Gere as imagens onde preferir (1280×720)
+            e envie aqui.
           </p>
         </Card>
       )}

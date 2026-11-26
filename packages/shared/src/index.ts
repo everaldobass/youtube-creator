@@ -398,6 +398,8 @@ export const MIN_TAGS = 20;
 export const MAX_TAGS = 25;
 /** Texto curto da thumbnail: até 10 palavras, como no padrão de CTR do YouTube. */
 export const MAX_PALAVRAS_THUMB = 10;
+/** Quantidade de variações de thumbnail sugeridas por projeto. */
+export const TOTAL_THUMBNAILS = 4;
 
 export type JobTipo =
   'narracao' | 'imagem' | 'thumbnail' | 'render' | 'editorial' | 'verificacao' | 'visual';

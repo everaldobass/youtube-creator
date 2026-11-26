@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleIni
 import { Job, Thumbnail } from '@prisma/client';
 import {
   MAX_PALAVRAS_THUMB,
+  TOTAL_THUMBNAILS,
   ThumbnailDto,
   ThumbnailsResponse,
   UploadImageInput,
@@ -68,15 +69,37 @@ export class ThumbnailsService implements OnModuleInit {
     );
     const base = textos.map(limitarPalavras).filter(Boolean);
     if (base.length === 0) throw new BadRequestException('O modelo não devolveu textos utilizáveis. Tente de novo.');
-    const duas = Array.from({ length: 2 }, (_, i) => base[i] ?? base[i % base.length]);
+    const variacoes = Array.from(
+      { length: TOTAL_THUMBNAILS },
+      (_, i) => base[i] ?? base[i % base.length],
+    );
 
-    const antigas = await this.prisma.thumbnail.findMany({ where: { projectId } });
+    const antigas = await this.prisma.thumbnail.findMany({
+      where: { projectId },
+      orderBy: { variacao: 'asc' },
+    });
+
+    // Projetos antigos tinham 2 variações. Ao gerar de novo, acrescenta as que
+    // faltam sem apagar as imagens já enviadas pelo usuário.
+    if (antigas.length > 0 && antigas.length < TOTAL_THUMBNAILS) {
+      const faltam = TOTAL_THUMBNAILS - antigas.length;
+      const proxima = Math.max(...antigas.map((t) => t.variacao)) + 1;
+      await this.prisma.thumbnail.createMany({
+        data: variacoes.slice(0, faltam).map((textoNaImagem, i) => ({
+          projectId,
+          variacao: proxima + i,
+          textoNaImagem,
+        })),
+      });
+      return this.response(projectId);
+    }
+
     for (const a of antigas) if (a.imagemPath) await this.storage.remove(a.imagemPath).catch(() => undefined);
     await this.prisma.job.deleteMany({ where: { projectId, tipo: 'thumbnail' } });
     await this.prisma.$transaction([
       this.prisma.thumbnail.deleteMany({ where: { projectId } }),
       this.prisma.thumbnail.createMany({
-        data: duas.map((textoNaImagem, i) => ({ projectId, variacao: i + 1, textoNaImagem })),
+        data: variacoes.map((textoNaImagem, i) => ({ projectId, variacao: i + 1, textoNaImagem })),
       }),
     ]);
     // As imagens são criadas manualmente (copiar prompt + enviar) ou uma a uma em "Refazer".

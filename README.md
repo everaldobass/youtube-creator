@@ -61,7 +61,7 @@ no fim das frases (a opção **Narração mais humana** fica ligada por padrão 
 4. **Narração:** voz fixa em todas as cenas, **velocidade de 85% a 110%**, **dicionário de pronúncia**, opção **Narração mais humana**, amostra de voz, player por cena, refazer individual, **versões para comparar**, **aprovação por cena** e ajuste da duração planejada ao áudio real.
 5. **Imagens:** guia de estilo único, uma imagem por cena, copiar prompt (Google Flow), **exportar todos os prompts em um .md** (completo ou no formato enxuto `prompt-criar_img.md`), **enviar uma pasta inteira de imagens** (o número em `cena-001...` define a cena), enviar imagem própria, **verificar correspondência entre narração e imagem** e **mapas/linhas do tempo** gerados por IA. Cada prompt traz a narração da cena e regras de fidelidade: as pessoas/povos citados aparecem como protagonistas, nunca uma paisagem vazia.
 6. **Tags:** 20 a 25 tags, limite de 500 caracteres, edição manual.
-7. **Thumbnails:** 2 variações 1280×720 com até 10 palavras; escolher, editar texto, refazer e baixar.
+7. **Thumbnails:** 4 variações 1280×720 com até 10 palavras; escolher, editar texto, refazer, baixar e exportar todos os prompts em um único arquivo.
 8. **Descrição:** gancho, resumo, capítulos a cada ~3 minutos cobrindo o vídeo inteiro (no início de cenas reais), chamada para se inscrever e hashtags.
 9. **Vídeo:** prévia no navegador com o movimento escolhido, legendas sincronizadas (posição, fonte, cor e verificação de legibilidade), música de fundo (upload ou biblioteca local), **análise de áudio e prévia da mixagem**, **checklist de revisão final**, MP4 (H.264 + AAC) montado no servidor e pacote ZIP reimportável (imagens, áudios, música, .srt, tempos, elementos visuais e `projeto.json`).
 

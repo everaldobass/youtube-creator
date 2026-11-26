@@ -8,6 +8,7 @@ import {
   MAX_PALAVRAS_THUMB,
   MAX_TAGS,
   MIN_TAGS,
+  TOTAL_THUMBNAILS,
   formatarTempo,
 } from '@yt/shared';
 import { z } from 'zod';
@@ -383,13 +384,13 @@ Responda somente em JSON: ["tag 1", "tag 2"]`;
 }
 
 export function promptTextosThumb(p: { titulo: string; roteiro: string; idioma: Idioma }): string {
-  return `Crie 2 textos curtos e bem diferentes para thumbnails do vídeo de YouTube "${p.titulo}". Cada texto tem no máximo ${MAX_PALAVRAS_THUMB} palavras (cerca de 10), em ${nomeDoIdioma(p.idioma)}, chama a atenção sem prometer o que o vídeo não entrega.
+  return `Crie ${TOTAL_THUMBNAILS} textos curtos e bem diferentes para thumbnails do vídeo de YouTube "${p.titulo}". Cada texto tem no máximo ${MAX_PALAVRAS_THUMB} palavras (cerca de 10), em ${nomeDoIdioma(p.idioma)}, chama a atenção sem prometer o que o vídeo não entrega. Varie o ângulo de cada texto (pergunta, benefício, contraste, curiosidade) para que as variações sejam realmente distintas.
 Contexto do vídeo: ${p.roteiro}
-Responda somente em JSON: {"textos": ["texto 1", "texto 2"]}`;
+Responda somente em JSON: {"textos": ["texto 1", "texto 2", "texto 3", "texto 4"]}`;
 }
 
 export function promptThumbnail(p: { titulo: string; n: number; textoCurto: string }): string {
-  return `Thumbnail de YouTube em 16:9, 1280x720, para o vídeo "${p.titulo}". Variação ${p.n} de 2, com enquadramento diferente da outra variação.
+  return `Thumbnail de YouTube em 16:9, 1280x720, para o vídeo "${p.titulo}". Variação ${p.n} de ${TOTAL_THUMBNAILS}, com enquadramento diferente das outras variações.
 Um único assunto principal em destaque, fundo simples, alto contraste, cores vibrantes e texto grande e legível com no máximo ${MAX_PALAVRAS_THUMB} palavras: "${p.textoCurto}".
 Aparência profissional e chamativa, sem poluição visual, sem logotipos, sem marca d'água e sem molduras.`;
 }
